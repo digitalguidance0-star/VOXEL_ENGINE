@@ -68,28 +68,59 @@
   }
   #craft-out:hover{border-color:rgba(92,158,74,0.8);background:rgba(92,158,74,0.12)}
   #craft-out .cnt{position:absolute;bottom:2px;right:4px;font-size:10px;color:rgba(255,255,255,0.8);text-shadow:1px 1px 0 #000;font-weight:700}
-  #overlay{
-    position:fixed;inset:0;background:#060606;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;z-index:100
+  /* ─── ONBOARDING & DASHBOARD ─── */
+  #onboarding, #dashboard {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    z-index: 1000; background: rgba(6, 6, 6, 0.85);
+    backdrop-filter: blur(10px); color: #fff;
+    font-family: var(--font);
   }
-  #ovr-bg{
-    position:absolute;inset:0;pointer-events:none;
-    background:radial-gradient(ellipse at 50% 60%,rgba(40,80,30,0.35) 0%,transparent 70%)
+  #onboarding.active, #dashboard.active { display: flex; }
+
+  #onboarding-panel, #dash-panel {
+    background: #1b1b1b; border: 2px solid #2a2a2a;
+    border-radius: 16px; padding: 40px; text-align: center;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.8);
+    position: relative; animation: panelSlide 0.3s ease-out;
   }
-  #overlay h1{
-    font-size:52px;letter-spacing:0.18em;text-transform:uppercase;color:var(--text);
-    margin-bottom:6px;position:relative;text-shadow:0 0 40px rgba(92,158,74,0.4),0 2px 0 #000
+  @keyframes panelSlide { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .engine-title {
+    font-size: 48px; font-weight: 700; letter-spacing: 0.2em;
+    color: #fff; text-transform: uppercase; margin-bottom: 8px;
+    text-shadow: 2px 2px 0 var(--accent), 4px 4px 0 rgba(0,0,0,0.5);
   }
-  #overlay p{font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:rgba(255,255,255,0.25);margin-bottom:42px;position:relative}
-  .ovr-btn{
-    background:transparent;border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);
-    padding:11px 44px;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;
-    cursor:pointer;border-radius:4px;font-family:var(--font);margin:5px;
-    transition:border-color 0.2s,color 0.2s,background 0.2s;position:relative
+  .tagline { font-size: 12px; color: rgba(255,255,255,0.4); letter-spacing: 0.4em; text-transform: uppercase; margin-bottom: 40px; }
+
+  .menu-btns { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .menu-btn {
+    width: 280px; padding: 16px; background: #222; border: 2px solid #333;
+    color: #eee; font-family: inherit; font-size: 14px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.15em; cursor: pointer;
+    border-radius: 8px; transition: all 0.2s;
   }
-  .ovr-btn:hover{border-color:var(--accent);color:var(--text);background:rgba(92,158,74,0.1)}
-  .ovr-btn.primary{border-color:var(--accent);color:var(--text);background:rgba(92,158,74,0.15)}
-  .ovr-btn.primary:hover{background:rgba(92,158,74,0.28)}
+  .menu-btn:hover { border-color: var(--accent); background: #2a2a2a; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(110,188,89,0.2); }
+  .menu-btn.primary { background: var(--accent); color: #000; border: none; }
+  .menu-btn.primary:hover { filter: brightness(1.1); }
+
+  /* Dashboard Layout */
+  #dash-panel { width: 800px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; text-align: left; }
+  .dash-col h3 { font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  .dash-stat { margin-bottom: 12px; font-size: 13px; color: rgba(255,255,255,0.7); display: flex; justify-content: space-between; }
+  .dash-stat span { color: #fff; font-weight: 700; }
+  
+  .dash-footer { grid-column: 1 / span 2; display: flex; gap: 12px; margin-top: 24px; padding-top: 24px; border-top: 1px solid #333; }
+  .dash-footer .menu-btn { width: auto; flex: 1; padding: 12px; }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; cursor: pointer; }
+  .toggle-row span { font-size: 13px; }
+  .toggle-box { width: 36px; height: 18px; background: #333; border-radius: 9px; position: relative; transition: background 0.3s; }
+  .toggle-box::after { content: ''; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; background: #666; border-radius: 50%; transition: all 0.3s; }
+  .toggle-row.on .toggle-box { background: var(--accent); }
+  .toggle-row.on .toggle-box::after { left: 21px; background: #fff; }
+
+  #fps-canvas { width: 100%; height: 40px; background: rgba(0,0,0,0.3); border-radius: 4px; margin-top: 8px; }
   #toast{
     position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
     font-size:11px;letter-spacing:0.12em;text-transform:uppercase;
@@ -116,6 +147,57 @@
 
 /* maintain selection highlight */
 .hslot.sel { border-color: rgba(255,255,255,0.5); }
+
+/* Status Bars Styling */
+#status-bars {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  pointer-events: none;
+}
+.status-bar {
+  height: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+.status-fill {
+  height: 100%;
+  width: 100%; /* Default to full, logic will control this */
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+}
+/* Health: Red to Green gradient feel */
+.health-fill {
+  background: linear-gradient(90deg, #ff4b2b, #ff416c);
+  box-shadow: 0 0 10px rgba(255, 75, 43, 0.3);
+}
+/* Hunger: Orange/Brown feel */
+.hunger-fill {
+  background: linear-gradient(90deg, #f2994a, #f2c94c);
+  box-shadow: 0 0 10px rgba(242, 153, 74, 0.3);
+}
+.bar-label {
+  position: absolute;
+  top: -14px;
+  left: 0;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+}
+
+@media (max-width: 600px) {
+  #status-bars { width: 180px; bottom: 70px; }
+}
 </style>
 </head>
 <body>
@@ -126,6 +208,16 @@
   <div id="debug"></div>
   <div id="blabel"></div>
   <div id="hotbar"></div>
+  <div id="status-bars">
+    <div class="status-bar" id="health-bar">
+      <div class="bar-label">Health</div>
+      <div class="status-fill health-fill" id="health-fill" style="width: 100%;"></div>
+    </div>
+    <div class="status-bar" id="hunger-bar">
+      <div class="bar-label">Hunger</div>
+      <div class="status-fill hunger-fill" id="hunger-fill" style="width: 80%;"></div>
+    </div>
+  </div>
 </div>
 
 <div id="inventory">
@@ -151,12 +243,43 @@
   </div>
 </div>
 
-<div id="overlay">
-  <div id="ovr-bg"></div>
-  <h1>MINRECRAFT</h1>
-  <p>voxel sandbox — desktop</p>
-  <button class="ovr-btn primary" id="btn-new">New World</button>
-  <button class="ovr-btn" id="btn-load">Load World</button>
+<div id="onboarding" class="active">
+  <div id="onboarding-panel">
+    <div class="engine-title">MINICRAFT</div>
+    <div class="tagline">Voxel Engine Sandbox</div>
+    <div class="menu-btns">
+      <button class="menu-btn primary" id="btn-start">Start New World</button>
+      <button class="menu-btn" id="btn-continue" style="display:none">Continue World</button>
+      <button class="menu-btn" id="btn-settings">Dev Settings</button>
+    </div>
+  </div>
+</div>
+
+<div id="dashboard">
+  <div id="dash-panel">
+    <div class="dash-col">
+      <h3>World Info</h3>
+      <div class="dash-stat">Seed <span id="ds-seed">-</span></div>
+      <div class="dash-stat">Coords <span id="ds-pos">0, 0, 0</span></div>
+      <div class="dash-stat">Chunks <span id="ds-chunks">0</span></div>
+      <div class="dash-stat">Blocks <span id="ds-blocks">0</span></div>
+    </div>
+    <div class="dash-col">
+      <h3>Performance</h3>
+      <div class="dash-stat">FPS <span id="ds-fps">60</span></div>
+      <div class="dash-stat">Memory <span id="ds-mem">-</span></div>
+      <canvas id="fps-canvas"></canvas>
+      <div style="margin-top:20px">
+        <div class="toggle-row" id="tog-wire"><span>Wireframe</span><div class="toggle-box"></div></div>
+        <div class="toggle-row" id="tog-chunk"><span>Show Borders</span><div class="toggle-box"></div></div>
+      </div>
+    </div>
+    <div class="dash-footer">
+      <button class="menu-btn primary" id="btn-resume">Resume</button>
+      <button class="menu-btn" id="btn-save">Save World</button>
+      <button class="menu-btn" id="btn-quit">Exit to Menu</button>
+    </div>
+  </div>
 </div>
 
 <div id="loading">
@@ -611,9 +734,13 @@ let locked=false,invOpen=false,gameActive=false;
 
 document.addEventListener('keydown',e=>{
   keys[e.code]=true;
+  if(e.code==='Escape'){
+    if(invOpen){invOpen=false;toggleInv(false);return}
+    if(gameActive)toggleDash(!dashOpen);
+    return;
+  }
   if(!gameActive)return;
   if(e.code==='KeyE'){invOpen=!invOpen;toggleInv(invOpen);return}
-  if(e.code==='Escape'&&invOpen){invOpen=false;toggleInv(false);return}
   if(e.code==='KeyF'){player.flying=!player.flying;player.vel.y=0;showToast(player.flying?'Flying ON':'Flying OFF');return}
   if(e.code==='KeyS'&&e.ctrlKey){e.preventDefault();saveWorld();return}
   const n=parseInt(e.key);
@@ -1071,6 +1198,9 @@ const craftOutEl=document.getElementById('craft-out');
 const craftOutN=document.getElementById('cout-n');
 const invOverlay=document.getElementById('inventory');
 const toastEl=document.getElementById('toast');
+const onboarding=document.getElementById('onboarding'),dashboard=document.getElementById('dashboard');
+const loadingEl=document.getElementById('loading'),lfill=document.getElementById('lfill');
+
 let toastT=null;
 
 function showToast(msg){
@@ -1279,21 +1409,46 @@ function loop(now){
   renderer.render(scene,camera);
 }
 
-// ─── STARTUP ─────────────────────────────────────────────────────────────────
-const overlay=document.getElementById('overlay');
-const loadingEl=document.getElementById('loading');
-const lfill=document.getElementById('lfill');
+// ─── UI STATE ───────────────────────────────────────────────────────────────
+let dashOpen = false;
 
+function toggleDash(open){
+  dashOpen = gameActive && open;
+  dashboard.classList.toggle('active', dashOpen);
+  if(dashOpen){
+    if(locked)document.exitPointerLock();
+    updateDashStats();
+  } else if(gameActive && !invOpen) {
+    cvs.requestPointerLock();
+  }
+}
+
+function updateDashStats(){
+  document.getElementById('ds-seed').textContent = '982134';
+  document.getElementById('ds-pos').textContent = `${Math.floor(player.pos.x)}, ${Math.floor(player.pos.y)}, ${Math.floor(player.pos.z)}`;
+  document.getElementById('ds-chunks').textContent = cmap.size;
+  document.getElementById('ds-blocks').textContent = (cmap.size * CS * CH * CS).toLocaleString();
+  document.getElementById('ds-fps').textContent = fps;
+  document.getElementById('ds-mem').textContent = (window.performance && window.performance.memory) 
+    ? Math.round(window.performance.memory.usedJSHeapSize / 1048576) + 'MB' 
+    : 'N/A';
+}
+
+// ─── STARTUP ─────────────────────────────────────────────────────────────────
 function startGame(loaded){
-  overlay.style.display='none';
+  onboarding.classList.remove('active');
   loadingEl.classList.remove('hide');loadingEl.style.opacity='1';
+  lfill.style.width='0%';
+  
   if(!loaded){
     invAdd(DIRT,32);invAdd(STONE,32);invAdd(WOOD,16);invAdd(PLANKS,8);
     Bus.emit('inv');
   }
+  
   const jobs=[];
   for(let dx=-RDIST;dx<=RDIST;dx++)for(let dz=-RDIST;dz<=RDIST;dz++)jobs.push([dx,dz]);
   let gi=0;
+  
   function step(){
     for(let b=0;b<10&&gi<jobs.length;b++,gi++){
       const[dx,dz]=jobs[gi];const ccx=dx,ccz=dz;
@@ -1301,40 +1456,61 @@ function startGame(loaded){
     }
     lfill.style.width=`${Math.round(gi/jobs.length*100)}%`;
     if(gi<jobs.length){requestAnimationFrame(step);return}
+    
     if(!loaded)player.pos.set(0,spawnY(0,0),0);
     loadingEl.style.opacity='0';
     setTimeout(()=>loadingEl.classList.add('hide'),400);
     gameActive=true;lastT=performance.now();
-    updateHotbar(); // instead of renderHotbar()
+    updateHotbar();
     cvs.requestPointerLock();
     requestAnimationFrame(loop);
   }
   step();
 }
 
-document.getElementById('btn-new').addEventListener('click',()=>{
+// ─── MENU HOOKS ──────────────────────────────────────────────────────────────
+document.getElementById('btn-start').onclick = () => {
   cmap.clear();
   meshMap.forEach(m=>{scene.remove(m);m.geometry.dispose();m.material.dispose()});
   meshMap.clear();dirty.clear();
   inv.forEach((_,i)=>inv[i]={id:0,n:0});
-  CraftingGrid.slots.forEach((_, i) => {
-  CraftingGrid.slots[i] = { id: 0, n: 0 };
-});
+  CraftingGrid.slots.forEach((_, i) => CraftingGrid.slots[i] = { id: 0, n: 0 });
   cresult={id:0,n:0};
   player.pos.set(0,40,0);player.vel.set(0,0,0);
   player.yaw=0;player.pitch=0;player.flying=false;
   startGame(false);
-});
+};
 
-document.getElementById('btn-load').addEventListener('click',()=>{
-  const ok=loadWorld();
+document.getElementById('btn-continue').onclick = () => {
+  const ok = loadWorld();
   if(!ok){showToast('No save found');return}
   startGame(true);
-});
+};
 
-loadingEl.classList.add('hide');
+document.getElementById('btn-resume').onclick = () => toggleDash(false);
+document.getElementById('btn-quit').onclick = () => {
+  gameActive = false;
+  toggleDash(false);
+  onboarding.classList.add('active');
+  if(locked) document.exitPointerLock();
+};
+document.getElementById('btn-save').onclick = () => { saveWorld(); showToast('World Saved'); };
+
+const hasSave = localStorage.getItem('minrecraft_save');
+if(hasSave) document.getElementById('btn-continue').style.display = 'block';
+
+// Dev toggles
+document.getElementById('tog-wire').onclick = function(){
+  this.classList.toggle('on');
+  scene.traverse(o => { if(o.isMesh && o.material.wireframe !== undefined) o.material.wireframe = this.classList.contains('on'); });
+};
+document.getElementById('tog-chunk').onclick = function(){
+  this.classList.toggle('on');
+  showToast(this.classList.contains('on') ? 'Borders: ON (Not Implemented)' : 'Borders: OFF');
+};
+
 })();
 </script>
 </body>
 </html>// Force GitHub update
-// Force GitHub update
+// Force GitHub update// Force GitHub update
