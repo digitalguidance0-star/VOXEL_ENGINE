@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MINICRAFT — Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Space+Mono:wght@400;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#060608;--panel:rgba(10,10,14,0.88);--border:rgba(255,255,255,0.07);
+  --border2:rgba(255,255,255,0.13);--accent:#5c9e4a;--accent2:#6ebc59;
+  --text:#d8d8e8;--muted:#5a5a72;--font:'Space Mono',monospace;--display:'VT323',monospace;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:var(--font);color:var(--text)}
+
+/* ── 3D CANVAS ── */
+#dash-canvas{position:fixed;inset:0;width:100%!important;height:100%!important;z-index:0}
+
+/* ── VIGNETTE ── */
+#vignette{
+  position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse 75% 75% at 50% 55%,transparent 30%,rgba(4,4,6,0.6) 100%);
+}
+
+/* ── TOP BAR ── */
+#top-bar{
+  position:fixed;top:0;left:0;right:0;z-index:10;
+  padding:16px 28px;display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(180deg,rgba(4,4,6,0.85) 0%,transparent 100%);
+  pointer-events:none;
+}
+.tb-logo{font-family:var(--display);font-size:28px;letter-spacing:0.22em;color:#fff;text-shadow:2px 2px 0 var(--accent)}
+.tb-player{display:flex;align-items:center;gap:14px;pointer-events:all}
+.tb-av{width:36px;height:36px;border-radius:8px;background:rgba(92,158,74,0.12);border:1px solid rgba(92,158,74,0.3);display:flex;align-items:center;justify-content:center;font-size:20px}
+.tb-info{display:flex;flex-direction:column;gap:3px}
+.tb-name{font-size:13px;color:#fff;font-weight:700;letter-spacing:0.06em}
+.tb-level{font-size:9px;color:var(--muted);letter-spacing:0.15em}
+.xp-bar{width:120px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;margin-top:2px}
+.xp-fill{height:100%;background:var(--accent);width:42%;border-radius:2px}
+.tb-seed{font-size:10px;color:var(--muted);letter-spacing:0.15em;text-align:right}
+.tb-seed span{display:block;color:rgba(255,255,255,0.35);font-size:9px}
+
+/* ── LEFT MENU ── */
+#left-menu{
+  position:fixed;left:28px;top:50%;transform:translateY(-50%);z-index:10;
+  display:flex;flex-direction:column;gap:8px;
+}
+.menu-item{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 20px 14px 16px;border-radius:8px;cursor:pointer;
+  background:var(--panel);border:1px solid var(--border);
+  transition:all 0.25s;min-width:170px;
+  backdrop-filter:blur(12px);
+  position:relative;overflow:hidden;
+}
+.menu-item::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--accent);transform:scaleY(0);transition:transform 0.2s;border-radius:0 2px 2px 0;
+}
+.menu-item:hover{border-color:var(--border2);background:rgba(14,14,18,0.95);transform:translateX(4px)}
+.menu-item:hover::before{transform:scaleY(1)}
+.menu-item.primary{background:rgba(92,158,74,0.12);border-color:rgba(92,158,74,0.3)}
+.menu-item.primary:hover{background:rgba(92,158,74,0.2);border-color:rgba(92,158,74,0.5)}
+.mi-icon{font-size:18px;min-width:22px;text-align:center}
+.mi-label{font-size:13px;letter-spacing:0.08em;color:var(--text)}
+.mi-sub{font-size:9px;color:var(--muted);letter-spacing:0.1em;display:block;margin-top:1px}
+.menu-item.primary .mi-label{color:var(--accent2);font-weight:700}
+
+/* ── BOTTOM RIGHT: WORLDS ── */
+#world-panel{
+  position:fixed;right:28px;bottom:30px;z-index:10;width:240px;
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:16px;backdrop-filter:blur(12px);
+}
+.wp-title{font-size:9px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.world-card{
+  padding:12px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,0.02);
+  margin-bottom:8px;cursor:pointer;transition:all 0.2s;
+}
+.world-card:hover{border-color:var(--border2);background:rgba(255,255,255,0.04);transform:translateX(-2px)}
+.world-card:last-child{margin-bottom:0}
+.wc-name{font-size:12px;color:#fff;font-weight:700;letter-spacing:0.06em;margin-bottom:2px}
+.wc-meta{font-size:9px;color:var(--muted);letter-spacing:0.1em}
+.wc-new{
+  border-color:rgba(92,158,74,0.2);background:rgba(92,158,74,0.04);
+  display:flex;align-items:center;gap:8px;
+}
+.wc-new .wc-name{color:var(--accent)}
+
+/* ── BOTTOM CENTER: HINT ── */
+#hint-bar{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+  font-size:10px;letter-spacing:0.15em;color:rgba(255,255,255,0.2);z-index:10;
+  pointer-events:none;text-align:center;
+}
+
+/* ── LOADING TRANSITION ── */
+#dash-loading{
+  position:fixed;inset:0;z-index:100;background:#060608;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;
+  gap:16px;transition:opacity 0.5s;
+}
+#dash-loading.out{opacity:0;pointer-events:none}
+#dash-loading p{font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(255,255,255,0.3)}
+#dl-bar{width:200px;height:2px;background:rgba(255,255,255,0.05);border-radius:2px;overflow:hidden}
+#dl-fill{height:100%;background:var(--accent);width:0%;transition:width 0.1s}
+.dl-logo{font-family:var(--display);font-size:48px;letter-spacing:0.2em;color:#fff;text-shadow:2px 2px 0 var(--accent)}
+
+/* ── CHARACTER LABEL ── */
+#char-label{
+  position:fixed;bottom:160px;left:50%;transform:translateX(-50%);
+  text-align:center;z-index:10;pointer-events:none;
+  opacity:0;transition:opacity 0.5s;
+}
+#char-label.vis{opacity:1}
+.cl-name{font-family:var(--display);font-size:22px;letter-spacing:0.15em;color:#fff;text-shadow:0 0 20px rgba(92,158,74,0.5)}
+.cl-hint{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:0.2em;margin-top:4px}
+
+/* ── DRAG INDICATOR ── */
+#drag-hint{
+  position:fixed;right:32px;top:50%;transform:translateY(-50%);
+  font-size:9px;letter-spacing:0.18em;color:rgba(255,255,255,0.2);
+  writing-mode:vertical-rl;text-orientation:mixed;
+  pointer-events:none;z-index:10;
+  opacity:0;transition:opacity 1s;
+}
+#drag-hint.vis{opacity:1}
+
+/* ── FADE TRANSITION ── */
+#fade-out{
+  position:fixed;inset:0;background:#060608;z-index:200;
+  opacity:0;pointer-events:none;transition:opacity 0.6s;
+}
+#fade-out.active{opacity:1;pointer-events:all}
+
+/* ── SETTINGS PANEL (inline) ── */
+#settings-panel{
+  position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+  background:rgba(4,4,6,0.7);backdrop-filter:blur(8px);
+}
+#settings-panel.open{display:flex}
+#set-box{
+  background:#0e0e12;border:1px solid rgba(255,255,255,0.1);border-radius:12px;
+  padding:32px;width:min(460px,92vw);box-shadow:0 40px 80px rgba(0,0,0,0.8);
+}
+#set-box h2{font-family:var(--display);font-size:28px;letter-spacing:0.12em;color:#fff;margin-bottom:20px}
+.set-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.set-row:last-of-type{border-bottom:none}
+.set-key{font-size:12px;color:var(--text)}
+.set-val{font-size:12px;color:var(--accent);font-weight:700}
+.set-close{margin-top:20px;padding:12px 24px;background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--muted);font-family:var(--font);font-size:12px;cursor:pointer;transition:all 0.2s;width:100%}
+.set-close:hover{border-color:rgba(255,255,255,0.2);color:var(--text)}
+</style>
+</head>
+<body>
+
+<canvas id="dash-canvas"></canvas>
+<div id="vignette"></div>
+
+<div id="top-bar">
+  <div class="tb-logo">MINICRAFT</div>
+  <div class="tb-player">
+    <div class="tb-av" id="tb-av">⚒</div>
+    <div class="tb-info">
+      <div class="tb-name" id="tb-name">Builder</div>
+      <div class="tb-level">LVL 1 — EXPLORER</div>
+      <div class="xp-bar"><div class="xp-fill"></div></div>
+    </div>
+  </div>
+  <div class="tb-seed">
+    <span>BUILD v1.0.0</span>
+    SEED: 982134
+  </div>
+</div>
+
+<div id="left-menu">
+  <div class="menu-item primary" id="btn-play">
+    <div class="mi-icon">▶</div>
+    <div><div class="mi-label">Play</div><span class="mi-sub">Enter open world</span></div>
+  </div>
+  <div class="menu-item" id="btn-mp-menu">
+    <div class="mi-icon">⬡</div>
+    <div><div class="mi-label">Multiplayer</div><span class="mi-sub">Unavailable</span></div>
+  </div>
+  <div class="menu-item" id="btn-settings-menu">
+    <div class="mi-icon">⚙</div>
+    <div><div class="mi-label">Settings</div><span class="mi-sub">Prefs & controls</span></div>
+  </div>
+  <div class="menu-item" id="btn-exit-menu">
+    <div class="mi-icon">✕</div>
+    <div><div class="mi-label">Exit</div><span class="mi-sub">Back to onboarding</span></div>
+  </div>
+</div>
+
+<div id="world-panel">
+  <div class="wp-title">Worlds</div>
+  <div class="world-card" id="wc-continue" style="display:none">
+    <div class="wc-name" id="wc-name">Last World</div>
+    <div class="wc-meta" id="wc-meta">Click to continue</div>
+  </div>
+  <div class="world-card wc-new" id="wc-new">
+    <span style="font-size:18px">＋</span>
+    <div><div class="wc-name">New World</div><div class="wc-meta">Fresh terrain generation</div></div>
+  </div>
+</div>
+
+<div id="char-label">
+  <div class="cl-name" id="char-name-label">BUILDER</div>
+  <div class="cl-hint">DRAG TO ROTATE</div>
+</div>
+
+<div id="drag-hint">DRAG ↕ ROTATE</div>
+<div id="hint-bar">[ESC] Pause &nbsp;·&nbsp; [DRAG] Rotate Character &nbsp;·&nbsp; [SCROLL] Zoom</div>
+
+<!-- Settings overlay -->
+<div id="settings-panel">
+  <div id="set-box">
+    <h2>Settings</h2>
+    <div class="set-row"><div class="set-key">Graphics</div><div class="set-val" id="sv-gfx">Medium</div></div>
+    <div class="set-row"><div class="set-key">Controls</div><div class="set-val" id="sv-ctrl">Standard</div></div>
+    <div class="set-row"><div class="set-key">Sensitivity</div><div class="set-val" id="sv-sens">5</div></div>
+    <div class="set-row"><div class="set-key">Render Distance</div><div class="set-val" id="sv-rd">Normal (4)</div></div>
+    <div class="set-row"><div class="set-key">Multiplayer</div><div class="set-val">Disabled</div></div>
+    <div class="set-row"><div class="set-key">Data Location</div><div class="set-val">localStorage</div></div>
+    <button class="set-close" onclick="document.getElementById('settings-panel').classList.remove('open')">Close Settings</button>
+  </div>
+</div>
+
+<!-- Loading screen -->
+<div id="dash-loading">
+  <div class="dl-logo">MINICRAFT</div>
+  <p>Loading Lobby</p>
+  <div id="dl-bar"><div id="dl-fill"></div></div>
+</div>
+
+<div id="fade-out"></div>
+
+<script>
+(function(){
+'use strict';
+
+// ── LOAD SAVED PROFILE ──
+const raw=localStorage.getItem('mc_onboarding');
+let profile={username:'Builder',avatar:'⚒',prefs:{gfx:'medium',ctrl:'standard',sens:5,rd:'normal'}};
+if(raw){try{profile=JSON.parse(raw)}catch(e){}}
+
+// Apply profile to UI
+document.getElementById('tb-name').textContent=profile.username||'Builder';
+document.getElementById('tb-av').textContent=profile.avatar||'⚒';
+document.getElementById('char-name-label').textContent=(profile.username||'Builder').toUpperCase();
+
+// Settings values
+const rdMap={near:'Near (2)',normal:'Normal (4)',far:'Far (6)'};
+if(profile.prefs){
+  const p=profile.prefs;
+  document.getElementById('sv-gfx').textContent=(p.gfx||'medium').charAt(0).toUpperCase()+(p.gfx||'medium').slice(1);
+  document.getElementById('sv-ctrl').textContent=p.ctrl==='inverted'?'Inverted Y':'Standard';
+  document.getElementById('sv-sens').textContent=p.sens||5;
+  document.getElementById('sv-rd').textContent=rdMap[p.rd]||'Normal (4)';
+}
+
+// Saved world indicator
+if(localStorage.getItem('minrecraft_save_v2')){
+  const wc=document.getElementById('wc-continue');
+  wc.style.display='block';
+  document.getElementById('wc-name').textContent='Continue World';
+  document.getElementById('wc-meta').textContent='Resume from last save';
+}
+
+// ── THREE.JS LOBBY SCENE ──
+const canvas=document.getElementById('dash-canvas');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a1018);
+scene.fog=new THREE.FogExp2(0x0a1018,0.045);
+
+const camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,0.1,200);
+camera.position.set(0,3.5,9);camera.lookAt(0,1.5,0);
+
+window.addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();
+});
+
+// ── LIGHTS ──
+const ambient=new THREE.AmbientLight(0xaabbdd,0.35);scene.add(ambient);
+const sun=new THREE.DirectionalLight(0xfff8e8,1.1);
+sun.position.set(6,10,8);sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.near=0.5;sun.shadow.camera.far=50;
+sun.shadow.camera.left=-10;sun.shadow.camera.right=10;sun.shadow.camera.top=10;sun.shadow.camera.bottom=-10;
+scene.add(sun);
+const fill=new THREE.DirectionalLight(0x4488ff,0.2);fill.position.set(-5,3,-4);scene.add(fill);
+const rim=new THREE.DirectionalLight(0x88ffaa,0.15);rim.position.set(3,5,-8);scene.add(rim);
+
+// ── VOXEL PLATFORM ──
+function makeVoxel(x,y,z,color,size=1){
+  const g=new THREE.BoxGeometry(size,size,size);
+  const m=new THREE.MeshLambertMaterial({color});
+  const mesh=new THREE.Mesh(g,m);
+  mesh.position.set(x,y,z);
+  mesh.castShadow=true;mesh.receiveShadow=true;
+  scene.add(mesh);return mesh;
+}
+
+const PLATFORM_COLORS={
+  ground:0x5c4a2a,grass:0x3d7032,stone:0x5a5a5a,
+  gravel:0x4a4842,water:0x1a4a9c,sand:0xa89650
+};
+
+// Build platform — 10x10 with varied heights
+const platform=[];
+for(let x=-5;x<=4;x++){
+  for(let z=-5;z<=4;z++){
+    const dist=Math.sqrt(x*x+z*z);
+    if(dist>5.5)continue;
+    const h=dist<2?0:Math.floor(Math.sin(x*0.4+z*0.3)*0.5);
+    const col=h>0?PLATFORM_COLORS.grass:x%3===0&&z%2===0?PLATFORM_COLORS.gravel:PLATFORM_COLORS.ground;
+    const v=makeVoxel(x,h-1.5,z,col);
+    // Top grass layer for elevated
+    if(h>0&&dist<4)makeVoxel(x,h-0.5,z,PLATFORM_COLORS.grass);
+    platform.push(v);
+  }
+}
+// A few stone pillars
+[[2,-1,2],[-2,0,-1],[3,-1,-3]].forEach(([x,h,z])=>{
+  for(let i=0;i<=h;i++)makeVoxel(x,-1.5+i,z,PLATFORM_COLORS.stone);
+});
+// Water pool
+for(let x=-4;x<=-2;x++)for(let z=2;z<=4;z++){
+  if(Math.abs(x+3)<1.5&&Math.abs(z-3)<1.5){
+    const g=new THREE.BoxGeometry(1,0.6,1);
+    const m=new THREE.MeshLambertMaterial({color:PLATFORM_COLORS.water,transparent:true,opacity:0.7});
+    const mesh=new THREE.Mesh(g,m);mesh.position.set(x,-1.8,z);scene.add(mesh);
+  }
+}
+// Trees
+function makeTree(x,z){
+  const trunk=new THREE.CylinderGeometry(0.18,0.22,1.8,6);
+  const tm=new THREE.MeshLambertMaterial({color:0x5c3a1e});
+  const t=new THREE.Mesh(trunk,tm);t.position.set(x,0.4,z);t.castShadow=true;scene.add(t);
+  const leaf=new THREE.BoxGeometry(1.4,1.2,1.4);
+  const lm=new THREE.MeshLambertMaterial({color:0x2e6b1e});
+  const l=new THREE.Mesh(leaf,lm);l.position.set(x,1.8,z);l.castShadow=true;scene.add(l);
+  const leaf2=new THREE.BoxGeometry(0.9,0.9,0.9);
+  const l2=new THREE.Mesh(leaf2,lm.clone());l2.position.set(x,2.7,z);scene.add(l2);
+}
+makeTree(3.5,0);makeTree(-3.8,-2);makeTree(1.5,-4);
+
+// ── PLAYER CHARACTER ──
+const charGroup=new THREE.Group();charGroup.position.set(0,0,0);scene.add(charGroup);
+
+// Colors from profile
+const skinHex=0xe8c99a;
+function makeBlock(w,h,d,col){
+  const g=new THREE.BoxGeometry(w,h,d);
+  const m=new THREE.MeshLambertMaterial({color:col});
+  return new THREE.Mesh(g,m);
+}
+// Body
+const body=makeBlock(0.72,0.88,0.44,0x2244aa);body.position.set(0,1.02,0);body.castShadow=true;charGroup.add(body);
+// Head
+const head=makeBlock(0.72,0.72,0.72,skinHex);head.position.set(0,1.84,0);head.castShadow=true;charGroup.add(head);
+// Hat detail
+const hat=makeBlock(0.76,0.14,0.76,0x112233);hat.position.set(0,2.26,0);charGroup.add(hat);
+// Eyes
+const eyeL=makeBlock(0.14,0.14,0.08,0x111);eyeL.position.set(-0.18,1.92,0.37);charGroup.add(eyeL);
+const eyeR=makeBlock(0.14,0.14,0.08,0x111);eyeR.position.set(0.18,1.92,0.37);charGroup.add(eyeR);
+// Legs
+const legL=makeBlock(0.3,0.88,0.38,0x1a1a44);legL.position.set(-0.2,0.14,0);legL.castShadow=true;charGroup.add(legL);
+const legR=makeBlock(0.3,0.88,0.38,0x1a1a44);legR.position.set(0.2,0.14,0);legR.castShadow=true;charGroup.add(legR);
+// Arms
+const armL=makeBlock(0.28,0.84,0.36,0xe8c99a);armL.position.set(-0.52,1.02,0);armL.castShadow=true;charGroup.add(armL);
+const armR=makeBlock(0.28,0.84,0.36,0xe8c99a);armR.position.set(0.52,1.02,0);armR.castShadow=true;charGroup.add(armR);
+// Tool in hand
+const toolHandle=makeBlock(0.09,0.7,0.09,0x8b6333);toolHandle.position.set(0.52,0.65,0.2);charGroup.add(toolHandle);
+const toolHead=makeBlock(0.3,0.12,0.12,0x7a7a7a);toolHead.position.set(0.52,1.1,0.2);charGroup.add(toolHead);
+
+// Shadow disc
+const shadowG=new THREE.CircleGeometry(0.6,16);
+const shadowM=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.3,depthWrite:false});
+const shadow=new THREE.Mesh(shadowG,shadowM);shadow.rotation.x=-Math.PI/2;shadow.position.y=-1.46;charGroup.add(shadow);
+
+// Floating name label (canvas texture)
+(function(){
+  const cv=document.createElement('canvas');cv.width=256;cv.height=64;
+  const ctx=cv.getContext('2d');
+  ctx.font='bold 28px VT323, monospace';ctx.fillStyle='rgba(92,158,74,0.9)';ctx.textAlign='center';
+  ctx.fillText((profile.username||'BUILDER').toUpperCase().slice(0,12),128,44);
+  const tex=new THREE.CanvasTexture(cv);
+  const sg=new THREE.PlaneGeometry(2.2,0.55);
+  const sm=new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+  const sp=new THREE.Mesh(sg,sm);sp.position.set(0,3.2,0);sp.userData.isNameTag=true;
+  charGroup.add(sp);
+})();
+
+// ── PARTICLES ── (leaf/dust)
+const particles=[];
+const pGeom=new THREE.BoxGeometry(0.08,0.08,0.08);
+const pMats=[
+  new THREE.MeshBasicMaterial({color:0x3d7032,transparent:true,opacity:0.6}),
+  new THREE.MeshBasicMaterial({color:0xbbaa44,transparent:true,opacity:0.5}),
+];
+for(let i=0;i<20;i++){
+  const m=new THREE.Mesh(pGeom,pMats[i%2]);
+  m.position.set((Math.random()-0.5)*8,Math.random()*4-1,(Math.random()-0.5)*8);
+  m.userData.vel=new THREE.Vector3((Math.random()-0.5)*0.3,0.05+Math.random()*0.1,(Math.random()-0.5)*0.3);
+  m.userData.life=Math.random()*6;
+  scene.add(m);particles.push(m);
+}
+
+// ── DRAG TO ROTATE ──
+let isDragging=false,prevX=0;
+let charYaw=0,targetYaw=0;
+canvas.addEventListener('mousedown',e=>{isDragging=true;prevX=e.clientX});
+window.addEventListener('mouseup',()=>{isDragging=false});
+window.addEventListener('mousemove',e=>{
+  if(!isDragging)return;
+  targetYaw+=(e.clientX-prevX)*0.012;prevX=e.clientX;
+});
+// Touch
+canvas.addEventListener('touchstart',e=>{isDragging=true;prevX=e.touches[0].clientX},{passive:true});
+canvas.addEventListener('touchend',()=>{isDragging=false});
+canvas.addEventListener('touchmove',e=>{
+  if(!isDragging)return;
+  targetYaw+=(e.touches[0].clientX-prevX)*0.012;prevX=e.touches[0].clientX;
+},{passive:true});
+
+// Scroll zoom
+let camDist=9,targetDist=9;
+window.addEventListener('wheel',e=>{
+  targetDist=Math.max(4,Math.min(16,targetDist+e.deltaY*0.01));
+});
+
+// ── ANIMATE ──
+let clock=new THREE.Clock();
+let tick=0;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05);tick+=dt;
+
+  // Idle sway
+  charGroup.position.y=Math.sin(tick*1.2)*0.04;
+  armL.rotation.z=Math.sin(tick*1.2)*0.05+0.04;
+  armR.rotation.z=-Math.sin(tick*1.2)*0.05-0.04;
+  armL.rotation.x=Math.sin(tick*0.9)*0.06;
+  armR.rotation.x=-Math.sin(tick*0.9)*0.06;
+  legL.rotation.x=Math.sin(tick*0.8)*0.03;
+  legR.rotation.x=-Math.sin(tick*0.8)*0.03;
+  head.rotation.y=Math.sin(tick*0.4)*0.06;
+
+  // Rotate char
+  charYaw+=(targetYaw-charYaw)*0.12;
+  charGroup.rotation.y=charYaw;
+  // Auto slow orbit when not dragging
+  if(!isDragging)targetYaw+=dt*0.18;
+
+  // Name tag always faces camera
+  charGroup.children.forEach(c=>{if(c.userData.isNameTag)c.rotation.y=-charYaw});
+
+  // Camera zoom
+  camDist+=(targetDist-camDist)*0.08;
+  camera.position.set(0,3.2,camDist);camera.lookAt(0,1.5,0);
+
+  // Particles
+  for(const p of particles){
+    p.position.addScaledVector(p.userData.vel,dt);
+    p.userData.life+=dt;
+    if(p.position.y>5||p.userData.life>8){
+      p.position.set((Math.random()-0.5)*8,-1.5,(Math.random()-0.5)*8);
+      p.userData.life=0;
+      p.userData.vel.set((Math.random()-0.5)*0.3,0.05+Math.random()*0.1,(Math.random()-0.5)*0.3);
+    }
+    p.rotation.y+=dt*0.5;
+  }
+
+  // Platform subtle wobble (leaves)
+  renderer.render(scene,camera);
+}
+animate();
+
+// ── LOADING ──
+const dlFill=document.getElementById('dl-fill');
+const dlEl=document.getElementById('dash-loading');
+let prog=0;
+function loadProgress(){
+  prog+=8+Math.random()*18;
+  dlFill.style.width=Math.min(prog,100)+'%';
+  if(prog<100){setTimeout(loadProgress,100)}
+  else{
+    setTimeout(()=>{
+      dlEl.classList.add('out');
+      setTimeout(()=>{dlEl.style.display='none';
+        document.getElementById('char-label').classList.add('vis');
+        document.getElementById('drag-hint').classList.add('vis');
+      },500);
+    },200);
+  }
+}
+loadProgress();
+
+// ── LAUNCH GAME ──
+function launchGame(intent){
+  const fd=document.getElementById('fade-out');
+  fd.classList.add('active');
+  localStorage.setItem('mc_launch_intent',intent);
+  setTimeout(()=>{window.location.href='index.html'},600);
+}
+
+document.getElementById('btn-play').onclick=()=>launchGame('continue');
+document.getElementById('wc-continue').onclick=()=>launchGame('continue');
+document.getElementById('wc-new').onclick=()=>launchGame('new');
+
+document.getElementById('btn-mp-menu').onclick=()=>{
+  document.getElementById('btn-mp-menu').querySelector('.mi-sub').textContent='Coming soon...';
+  setTimeout(()=>document.getElementById('btn-mp-menu').querySelector('.mi-sub').textContent='Unavailable',2000);
+};
+
+document.getElementById('btn-settings-menu').onclick=()=>{
+  document.getElementById('settings-panel').classList.add('open');
+};
+
+document.getElementById('btn-exit-menu').onclick=()=>{
+  const fd=document.getElementById('fade-out');fd.classList.add('active');
+  setTimeout(()=>window.location.href='onboarding.html',500);
+};
+
+// Keyboard
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter')launchGame('continue');
+  if(e.key==='Escape')document.getElementById('settings-panel').classList.remove('open');
+});
+
+})();
+</script>
+</body>
+</html>// Force GitHub update
