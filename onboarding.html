@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MINICRAFT — Welcome</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Space+Mono:wght@400;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#060608;--panel:#0e0e12;--border:#1e1e28;--border2:#2a2a3a;
+  --accent:#5c9e4a;--accent2:#6ebc59;--text:#d8d8e8;--muted:#5a5a72;
+  --warn:#e05050;--font:'Space Mono',monospace;--display:'VT323',monospace;
+  --step-active:#5c9e4a;--step-done:#2e5c24;--step-idle:#1e1e28;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:var(--font);color:var(--text)}
+
+/* ── PIXEL GRID BACKGROUND ── */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:
+    linear-gradient(rgba(92,158,74,0.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(92,158,74,0.03) 1px,transparent 1px);
+  background-size:32px 32px;pointer-events:none;z-index:0;
+}
+/* ── VOXEL FLOATING BLOCKS ── */
+.vblocks{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.vb{
+  position:absolute;width:18px;height:18px;opacity:0;
+  animation:vfloat 12s ease-in-out infinite;
+  image-rendering:pixelated;
+}
+.vb::before,.vb::after{content:'';position:absolute}
+.vb::before{inset:0;background:var(--c,#5c9e4a)}
+.vb::after{top:-4px;right:-4px;width:100%;height:100%;background:color-mix(in srgb,var(--c,#5c9e4a) 70%,#fff);clip-path:polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px)}
+@keyframes vfloat{
+  0%{opacity:0;transform:translateY(0) rotate(0deg)}
+  15%{opacity:0.35}
+  85%{opacity:0.35}
+  100%{opacity:0;transform:translateY(-120px) rotate(20deg)}
+}
+
+/* ── MAIN FRAME ── */
+#ob-wrap{
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+  background:radial-gradient(ellipse 80% 80% at 50% 50%,rgba(92,158,74,0.04) 0%,transparent 70%);
+}
+#ob-panel{
+  width:min(660px,96vw);max-height:92vh;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--border2);border-radius:12px;
+  box-shadow:0 0 80px rgba(0,0,0,0.8),0 0 0 1px rgba(92,158,74,0.08) inset;
+  overflow:hidden;
+}
+
+/* ── HEADER ── */
+#ob-head{
+  padding:28px 32px 20px;border-bottom:1px solid var(--border);
+  background:linear-gradient(180deg,rgba(92,158,74,0.06) 0%,transparent 100%);
+  flex-shrink:0;
+}
+.ob-logo{font-family:var(--display);font-size:42px;letter-spacing:0.18em;color:#fff;line-height:1;text-shadow:2px 2px 0 var(--accent),4px 4px 0 rgba(0,0,0,0.5)}
+.ob-sub{font-size:10px;letter-spacing:0.4em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+
+/* ── STEP PROGRESS ── */
+#ob-steps{display:flex;gap:4px;margin-top:20px}
+.step-pip{
+  flex:1;height:3px;border-radius:2px;background:var(--step-idle);
+  transition:background 0.4s ease;position:relative;overflow:hidden;
+}
+.step-pip.active{background:var(--step-active)}
+.step-pip.done{background:var(--step-done)}
+.step-pip.active::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent);
+  animation:shimmer 1.5s infinite;
+}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+/* ── BODY / SCROLL ── */
+#ob-body{flex:1;overflow-y:auto;padding:32px;scroll-behavior:smooth}
+#ob-body::-webkit-scrollbar{width:4px}
+#ob-body::-webkit-scrollbar-track{background:transparent}
+#ob-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ── STEP PANELS ── */
+.step-panel{display:none;animation:stepIn 0.25s ease-out both}
+.step-panel.active{display:block}
+@keyframes stepIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+.step-title{font-family:var(--display);font-size:28px;letter-spacing:0.1em;color:#fff;margin-bottom:6px}
+.step-desc{font-size:11px;color:var(--muted);line-height:1.8;margin-bottom:28px;letter-spacing:0.04em}
+
+/* ── CONSENT ITEMS ── */
+.consent-item{
+  display:flex;gap:14px;align-items:flex-start;
+  padding:14px 16px;margin-bottom:8px;
+  border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);
+  cursor:pointer;transition:border-color 0.2s,background 0.2s;
+  user-select:none;
+}
+.consent-item:hover{border-color:var(--border2);background:rgba(255,255,255,0.03)}
+.consent-item.checked{border-color:rgba(92,158,74,0.4);background:rgba(92,158,74,0.04)}
+.cb-box{
+  width:20px;height:20px;min-width:20px;border-radius:4px;
+  border:2px solid var(--border2);background:transparent;
+  display:flex;align-items:center;justify-content:center;
+  transition:all 0.2s;margin-top:1px;
+}
+.consent-item.checked .cb-box{border-color:var(--accent);background:var(--accent)}
+.cb-check{display:none;color:#000;font-size:12px;font-weight:700}
+.consent-item.checked .cb-check{display:block}
+.consent-text strong{display:block;font-size:12px;color:var(--text);margin-bottom:3px;letter-spacing:0.05em}
+.consent-text span{font-size:10px;color:var(--muted);line-height:1.7}
+.consent-text a{color:var(--accent);text-decoration:none}
+.consent-text a:hover{text-decoration:underline}
+
+/* ── DATA SUMMARY BOX ── */
+.data-box{
+  background:rgba(0,0,0,0.3);border:1px solid var(--border2);border-radius:8px;
+  padding:18px;margin:16px 0;font-size:10px;line-height:1.9;color:var(--muted);
+  letter-spacing:0.04em;
+}
+.data-box strong{color:var(--accent);font-size:11px}
+.data-row{display:flex;gap:8px;margin-bottom:4px}
+.data-row::before{content:'›';color:var(--accent);flex-shrink:0}
+.no-sell{
+  margin-top:14px;padding:10px 14px;border-radius:6px;
+  background:rgba(92,158,74,0.06);border:1px solid rgba(92,158,74,0.2);
+  color:rgba(255,255,255,0.6);font-size:10px;
+}
+.no-sell strong{color:var(--accent2)}
+
+/* ── FORM FIELDS ── */
+.field-group{margin-bottom:20px}
+.field-label{font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:block}
+.field-input{
+  width:100%;padding:12px 16px;background:#0a0a0e;border:1px solid var(--border2);border-radius:6px;
+  color:var(--text);font-family:var(--font);font-size:13px;outline:none;
+  transition:border-color 0.2s,box-shadow 0.2s;letter-spacing:0.05em;
+}
+.field-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(92,158,74,0.12)}
+.field-input.error{border-color:var(--warn)}
+.field-hint{font-size:10px;color:var(--muted);margin-top:6px;letter-spacing:0.04em}
+.field-hint.error-msg{color:var(--warn)}
+.char-counter{float:right;font-size:10px;color:var(--muted)}
+
+/* ── AVATAR GRID ── */
+.avatar-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px}
+.av-item{
+  aspect-ratio:1;border-radius:8px;border:2px solid var(--border);background:#0a0a0e;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:border-color 0.2s,transform 0.15s;overflow:hidden;
+  font-size:22px;
+}
+.av-item:hover{border-color:var(--border2);transform:scale(1.05)}
+.av-item.selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(92,158,74,0.25)}
+
+/* ── PREFS ── */
+.pref-group{margin-bottom:24px}
+.pref-label{font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:block}
+.pref-options{display:flex;gap:8px;flex-wrap:wrap}
+.pref-btn{
+  padding:8px 18px;border-radius:6px;border:1px solid var(--border2);background:#0a0a0e;
+  color:var(--text);font-family:var(--font);font-size:11px;cursor:pointer;
+  transition:all 0.2s;letter-spacing:0.08em;
+}
+.pref-btn:hover{border-color:var(--muted)}
+.pref-btn.sel{border-color:var(--accent);background:rgba(92,158,74,0.08);color:var(--accent2)}
+
+/* ── SUMMARY ── */
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
+.sum-item{padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02)}
+.sum-item label{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px}
+.sum-item span{font-size:12px;color:#fff;font-weight:700}
+.sum-ready{
+  text-align:center;padding:16px;border:1px solid rgba(92,158,74,0.3);
+  border-radius:8px;background:rgba(92,158,74,0.05);margin-top:16px;
+  font-size:11px;color:rgba(255,255,255,0.5);line-height:1.8;
+}
+.sum-ready strong{color:var(--accent2);font-family:var(--display);font-size:18px;display:block;letter-spacing:0.1em}
+
+/* ── FOOTER / BUTTONS ── */
+#ob-foot{
+  padding:20px 32px;border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;flex-shrink:0;
+  background:var(--panel);
+}
+.step-counter{font-size:10px;color:var(--muted);letter-spacing:0.2em}
+.btn-row{display:flex;gap:10px}
+.btn-back{
+  padding:12px 22px;border-radius:6px;border:1px solid var(--border2);background:transparent;
+  color:var(--muted);font-family:var(--font);font-size:12px;cursor:pointer;
+  transition:all 0.2s;letter-spacing:0.1em;
+}
+.btn-back:hover{border-color:var(--muted);color:var(--text)}
+.btn-next{
+  padding:12px 28px;border-radius:6px;border:none;background:var(--accent);
+  color:#000;font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;
+  transition:all 0.2s;letter-spacing:0.1em;text-transform:uppercase;
+  box-shadow:0 4px 20px rgba(92,158,74,0.25);
+}
+.btn-next:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px);box-shadow:0 6px 24px rgba(92,158,74,0.35)}
+.btn-next:disabled{background:#1e2e1a;color:#2e4a2a;cursor:not-allowed;box-shadow:none;transform:none}
+.btn-enter{
+  padding:14px 40px;border-radius:8px;border:none;background:var(--accent);
+  color:#000;font-family:var(--display);font-size:22px;cursor:pointer;
+  transition:all 0.2s;letter-spacing:0.15em;text-transform:uppercase;
+  box-shadow:0 6px 30px rgba(92,158,74,0.3);width:100%;margin-top:8px;
+}
+.btn-enter:hover{background:var(--accent2);box-shadow:0 8px 40px rgba(92,158,74,0.45);transform:translateY(-2px)}
+.warn-msg{font-size:10px;color:var(--warn);letter-spacing:0.1em;display:none}
+.warn-msg.show{display:block}
+</style>
+</head>
+<body>
+
+<div class="vblocks" id="vblocks"></div>
+
+<div id="ob-wrap">
+  <div id="ob-panel">
+    <div id="ob-head">
+      <div class="ob-logo">MINICRAFT</div>
+      <div class="ob-sub">Voxel Engine Sandbox — Setup Required</div>
+      <div id="ob-steps">
+        <div class="step-pip active" id="pip-0"></div>
+        <div class="step-pip" id="pip-1"></div>
+        <div class="step-pip" id="pip-2"></div>
+        <div class="step-pip" id="pip-3"></div>
+        <div class="step-pip" id="pip-4"></div>
+        <div class="step-pip" id="pip-5"></div>
+      </div>
+    </div>
+
+    <div id="ob-body">
+
+      <!-- ── STEP 0: WELCOME ── -->
+      <div class="step-panel active" id="step-0">
+        <div class="step-title">Welcome, Builder.</div>
+        <div class="step-desc">Before you enter the world, we need to confirm a few things.<br>This process takes about 60 seconds and is required every session.</div>
+        <div class="data-box">
+          <strong>What to expect:</strong>
+          <div class="data-row">Age confirmation (13+ requirement)</div>
+          <div class="data-row">Legal consent — Privacy Policy & Terms of Service</div>
+          <div class="data-row">Account identity setup — username & avatar</div>
+          <div class="data-row">Optional preferences — graphics & controls</div>
+          <div class="data-row">Review & enter world</div>
+        </div>
+        <div class="no-sell">
+          <strong>Your data is yours.</strong> MINICRAFT does not sell, rent, or share your personal data with third parties for advertising.
+        </div>
+      </div>
+
+      <!-- ── STEP 1: AGE GATE ── -->
+      <div class="step-panel" id="step-1">
+        <div class="step-title">Age Confirmation</div>
+        <div class="step-desc">MINICRAFT requires users to be 13 years of age or older to access the platform, in compliance with COPPA and applicable regional laws.</div>
+
+        <div class="consent-item" id="age-item" onclick="toggleConsent('age','age-item')">
+          <div class="cb-box" id="cb-age"><span class="cb-check">✓</span></div>
+          <div class="consent-text">
+            <strong>Age Declaration</strong>
+            <span>I confirm that I am 13 years of age or older. I understand that providing false age information to access this platform violates the Terms of Service.</span>
+          </div>
+        </div>
+        <div class="warn-msg" id="warn-age">You must confirm your age to continue.</div>
+
+        <div class="data-box" style="margin-top:20px">
+          <strong>Why we ask:</strong>
+          <div class="data-row">COPPA (Children's Online Privacy Protection Act) prohibits collection of personal data from users under 13 without verifiable parental consent.</div>
+          <div class="data-row">Regional laws (GDPR Article 8, UK GDPR) require age-appropriate data handling.</div>
+          <div class="data-row">If you are under 13, please do not use this platform.</div>
+        </div>
+      </div>
+
+      <!-- ── STEP 2: PRIVACY & TOS ── -->
+      <div class="step-panel" id="step-2">
+        <div class="step-title">Privacy & Legal</div>
+        <div class="step-desc">Please review and accept the following agreements. Each item requires explicit acceptance — no pre-checked boxes.</div>
+
+        <div class="consent-item" id="priv-item" onclick="toggleConsent('priv','priv-item')">
+          <div class="cb-box" id="cb-priv"><span class="cb-check">✓</span></div>
+          <div class="consent-text">
+            <strong>Privacy Policy</strong>
+            <span>I have read and accept the <a href="#" onclick="return false">Privacy Policy</a>. I understand how my data is collected, stored, and used to operate MINICRAFT's gameplay systems.</span>
+          </div>
+        </div>
+
+        <div class="consent-item" id="data-item" onclick="toggleConsent('data','data-item')">
+          <div class="cb-box" id="cb-data"><span class="cb-check">✓</span></div>
+          <div class="consent-text">
+            <strong>Data Collection & Usage</strong>
+            <span>I consent to MINICRAFT storing local game data (world state, settings, progress) via browser localStorage. No data is transmitted to external servers in this single-player build.</span>
+          </div>
+        </div>
+
+        <div class="consent-item" id="mp-item" onclick="toggleConsent('mp','mp-item')">
+          <div class="cb-box" id="cb-mp"><span class="cb-check">✓</span></div>
+          <div class="consent-text">
+            <strong>Multiplayer Communication Policy</strong>
+            <span>I acknowledge that multiplayer features are not active in this build. If multiplayer is enabled in future versions, I agree to comply with community conduct standards and anti-harassment policies.</span>
+          </div>
+        </div>
+
+        <div class="consent-item" id="tos-item" onclick="toggleConsent('tos','tos-item')">
+          <div class="cb-box" id="cb-tos"><span class="cb-check">✓</span></div>
+          <div class="consent-text">
+            <strong>Terms of Service</strong>
+            <span>I have read and agree to the <a href="#" onclick="return false">Terms of Service</a>, including rules about fair use, acceptable gameplay behavior, and intellectual property.</span>
+          </div>
+        </div>
+
+        <div class="warn-msg" id="warn-legal">All agreements must be accepted to continue.</div>
+
+        <div class="data-box" style="margin-top:20px">
+          <strong>Transparent Data Summary</strong>
+          <div class="data-row"><strong style="color:#d8d8e8">Username:</strong> Stored locally in browser (localStorage). Used for display only.</div>
+          <div class="data-row"><strong style="color:#d8d8e8">World Data:</strong> Chunk modifications, inventory, player position — localStorage only.</div>
+          <div class="data-row"><strong style="color:#d8d8e8">Settings:</strong> Graphics, controls, preferences — localStorage only.</div>
+          <div class="data-row"><strong style="color:#d8d8e8">Multiplayer:</strong> Not active. No server communication occurs.</div>
+          <div class="no-sell">
+            <strong>We do not sell your data.</strong> All data remains on your device. You can clear it at any time by clearing your browser storage.
+          </div>
+        </div>
+      </div>
+
+      <!-- ── STEP 3: ACCOUNT ── -->
+      <div class="step-panel" id="step-3">
+        <div class="step-title">Your Identity</div>
+        <div class="step-desc">Create your in-world identity. Your username will appear in your HUD and save file.</div>
+
+        <div class="field-group">
+          <label class="field-label" for="inp-username">Username <span class="char-counter" id="char-cnt">0/16</span></label>
+          <input class="field-input" id="inp-username" type="text" maxlength="16" placeholder="Enter username..." autocomplete="off" spellcheck="false"/>
+          <div class="field-hint" id="un-hint">3–16 characters. Letters, numbers, and underscores only.</div>
+          <div class="field-hint error-msg" id="un-error" style="display:none"></div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Avatar Token</label>
+          <div class="avatar-grid" id="av-grid"></div>
+        </div>
+      </div>
+
+      <!-- ── STEP 4: PREFERENCES ── -->
+      <div class="step-panel" id="step-4">
+        <div class="step-title">Preferences</div>
+        <div class="step-desc">Optional settings. You can change these anytime in the dashboard.</div>
+
+        <div class="pref-group">
+          <span class="pref-label">Graphics Quality</span>
+          <div class="pref-options" id="pref-gfx">
+            <button class="pref-btn" data-val="low" onclick="setPref('gfx',this)">Low</button>
+            <button class="pref-btn sel" data-val="medium" onclick="setPref('gfx',this)">Medium</button>
+            <button class="pref-btn" data-val="high" onclick="setPref('gfx',this)">High</button>
+          </div>
+        </div>
+
+        <div class="pref-group">
+          <span class="pref-label">Control Style</span>
+          <div class="pref-options" id="pref-ctrl">
+            <button class="pref-btn sel" data-val="standard" onclick="setPref('ctrl',this)">Standard</button>
+            <button class="pref-btn" data-val="inverted" onclick="setPref('ctrl',this)">Inverted Y</button>
+          </div>
+        </div>
+
+        <div class="pref-group">
+          <span class="pref-label">Mouse Sensitivity</span>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+            <input type="range" id="pref-sens" min="1" max="10" value="5" style="flex:1;accent-color:var(--accent)"/>
+            <span id="sens-val" style="font-size:12px;color:var(--accent);min-width:16px;text-align:right">5</span>
+          </div>
+        </div>
+
+        <div class="pref-group">
+          <span class="pref-label">Render Distance</span>
+          <div class="pref-options" id="pref-rd">
+            <button class="pref-btn" data-val="near" onclick="setPref('rd',this)">Near (2)</button>
+            <button class="pref-btn sel" data-val="normal" onclick="setPref('rd',this)">Normal (4)</button>
+            <button class="pref-btn" data-val="far" onclick="setPref('rd',this)">Far (6)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── STEP 5: SUMMARY ── -->
+      <div class="step-panel" id="step-5">
+        <div class="step-title">Ready to Build.</div>
+        <div class="step-desc">Review your setup. Click "Enter World" to launch MINICRAFT.</div>
+
+        <div class="summary-grid">
+          <div class="sum-item"><label>Username</label><span id="sum-name">—</span></div>
+          <div class="sum-item"><label>Avatar</label><span id="sum-av">—</span></div>
+          <div class="sum-item"><label>Graphics</label><span id="sum-gfx">Medium</span></div>
+          <div class="sum-item"><label>Controls</label><span id="sum-ctrl">Standard</span></div>
+          <div class="sum-item"><label>Sensitivity</label><span id="sum-sens">5</span></div>
+          <div class="sum-item"><label>Render Dist.</label><span id="sum-rd">Normal (4)</span></div>
+        </div>
+        <div class="sum-item" style="padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);margin-bottom:8px">
+          <label style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:4px">Legal</label>
+          <span style="font-size:11px;color:var(--accent)">Age confirmed ✓ &nbsp; Privacy Policy ✓ &nbsp; Data Consent ✓ &nbsp; Multiplayer Policy ✓ &nbsp; Terms ✓</span>
+        </div>
+
+        <div class="sum-ready">
+          <strong>MINICRAFT</strong>
+          Your world is ready to generate. All consent recorded. Data stays on your device.
+        </div>
+
+        <button class="btn-enter" id="btn-enter-world">Enter World →</button>
+      </div>
+
+    </div><!-- /ob-body -->
+
+    <div id="ob-foot">
+      <div class="step-counter" id="step-counter">Step 1 of 6</div>
+      <div>
+        <span class="warn-msg" id="warn-global" style="margin-right:12px"></span>
+        <div class="btn-row">
+          <button class="btn-back" id="btn-back" onclick="goBack()" style="display:none">← Back</button>
+          <button class="btn-next" id="btn-next" onclick="goNext()">Continue →</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const AVATARS=['⚒','🪨','🌲','🌿','⛏','🔥','❄','🌊','⚡','🦅','🐺','✨'];
+const TOTAL_STEPS=6;
+let curStep=0;
+const consent={age:false,priv:false,data:false,mp:false,tos:false};
+const prefs={gfx:'medium',ctrl:'standard',sens:5,rd:'normal'};
+let selectedAvatar=AVATARS[0];
+let username='';
+
+// Floating voxel blocks
+(function initVoxels(){
+  const vb=document.getElementById('vblocks');
+  const cols=['#5c9e4a','#8b5a2b','#7f7f7f','#deb887','#2e7d32','#2a6bc4'];
+  for(let i=0;i<18;i++){
+    const el=document.createElement('div');el.className='vb';
+    el.style.cssText=`left:${Math.random()*100}%;bottom:${Math.random()*40}%;--c:${cols[i%cols.length]};animation-delay:${Math.random()*10}s;animation-duration:${10+Math.random()*8}s`;
+    vb.appendChild(el);
+  }
+})();
+
+// Avatar grid
+(function buildAvatars(){
+  const grid=document.getElementById('av-grid');
+  AVATARS.forEach((av,i)=>{
+    const el=document.createElement('div');el.className='av-item'+(i===0?' selected':'');
+    el.textContent=av;el.title=`Avatar ${i+1}`;
+    el.onclick=()=>{
+      document.querySelectorAll('.av-item').forEach(a=>a.classList.remove('selected'));
+      el.classList.add('selected');selectedAvatar=av;
+    };
+    grid.appendChild(el);
+  });
+})();
+
+// Username input
+const unInput=document.getElementById('inp-username');
+const charCnt=document.getElementById('char-cnt');
+unInput.addEventListener('input',()=>{
+  const v=unInput.value;charCnt.textContent=`${v.length}/16`;
+  username=v;validateUsername();
+});
+
+function validateUsername(){
+  const v=unInput.value;
+  const errEl=document.getElementById('un-error');
+  const hintEl=document.getElementById('un-hint');
+  if(!v){errEl.style.display='none';hintEl.style.display='block';unInput.classList.remove('error');return false}
+  if(v.length<3){errEl.textContent='Too short — minimum 3 characters.';errEl.style.display='block';hintEl.style.display='none';unInput.classList.add('error');return false}
+  if(!/^[a-zA-Z0-9_]+$/.test(v)){errEl.textContent='Only letters, numbers, and underscores allowed.';errEl.style.display='block';hintEl.style.display='none';unInput.classList.add('error');return false}
+  errEl.style.display='none';hintEl.style.display='block';unInput.classList.remove('error');return true;
+}
+
+// Pref buttons
+window.setPref=function(key,el){
+  const group=el.parentElement;
+  group.querySelectorAll('.pref-btn').forEach(b=>b.classList.remove('sel'));
+  el.classList.add('sel');prefs[key]=el.dataset.val;
+};
+const sensInput=document.getElementById('pref-sens');
+const sensVal=document.getElementById('sens-val');
+sensInput.addEventListener('input',()=>{prefs.sens=parseInt(sensInput.value);sensVal.textContent=prefs.sens});
+
+// Consent toggle
+window.toggleConsent=function(key,itemId){
+  consent[key]=!consent[key];
+  const item=document.getElementById(itemId);
+  const cb=item.querySelector('.cb-box');
+  item.classList.toggle('checked',consent[key]);
+};
+
+function updatePips(){
+  for(let i=0;i<TOTAL_STEPS;i++){
+    const pip=document.getElementById('pip-'+i);
+    if(!pip)continue;
+    pip.className='step-pip '+(i<curStep?'done':i===curStep?'active':'');
+  }
+  document.getElementById('step-counter').textContent=`Step ${curStep+1} of ${TOTAL_STEPS}`;
+  document.getElementById('btn-back').style.display=curStep>0?'inline-block':'none';
+  const nextBtn=document.getElementById('btn-next');
+  nextBtn.style.display=curStep===TOTAL_STEPS-1?'none':'inline-block';
+}
+
+function showStep(i){
+  document.querySelectorAll('.step-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('step-'+i).classList.add('active');
+  curStep=i;updatePips();
+  hideWarn();
+}
+
+function hideWarn(){
+  document.querySelectorAll('.warn-msg').forEach(w=>w.classList.remove('show'));
+}
+
+function showWarn(id){
+  const el=document.getElementById(id);if(el)el.classList.add('show');
+}
+
+window.goNext=function(){
+  if(curStep===1){
+    if(!consent.age){showWarn('warn-age');return}
+  }
+  if(curStep===2){
+    if(!consent.priv||!consent.data||!consent.mp||!consent.tos){showWarn('warn-legal');return}
+  }
+  if(curStep===3){
+    if(!validateUsername()||username.length<3){
+      document.getElementById('un-error').textContent='Please enter a valid username.';
+      document.getElementById('un-error').style.display='block';return;
+    }
+  }
+  if(curStep===4){populateSummary()}
+  if(curStep<TOTAL_STEPS-1)showStep(curStep+1);
+};
+
+window.goBack=function(){if(curStep>0)showStep(curStep-1)};
+
+function populateSummary(){
+  document.getElementById('sum-name').textContent=username;
+  document.getElementById('sum-av').textContent=selectedAvatar;
+  document.getElementById('sum-gfx').textContent=prefs.gfx.charAt(0).toUpperCase()+prefs.gfx.slice(1);
+  document.getElementById('sum-ctrl').textContent=prefs.ctrl==='inverted'?'Inverted Y':'Standard';
+  document.getElementById('sum-sens').textContent=prefs.sens;
+  const rdMap={near:'Near (2)',normal:'Normal (4)',far:'Far (6)'};
+  document.getElementById('sum-rd').textContent=rdMap[prefs.rd]||prefs.rd;
+}
+
+document.getElementById('btn-enter-world').onclick=function(){
+  const data={username,avatar:selectedAvatar,prefs,consentTimestamp:Date.now()};
+  localStorage.setItem('mc_onboarding',JSON.stringify(data));
+  localStorage.setItem('mc_launch_intent','new');
+  // Forward to dashboard
+  window.location.href='dashboard.html';
+};
+
+// Keyboard nav
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&curStep<TOTAL_STEPS-1)goNext();
+});
+
+})();
+</script>
+</body>
+</html>// Force GitHub update
