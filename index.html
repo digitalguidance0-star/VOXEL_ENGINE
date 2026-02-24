@@ -184,6 +184,11 @@
   background: linear-gradient(90deg, #f2994a, #f2c94c);
   box-shadow: 0 0 10px rgba(242, 153, 74, 0.3);
 }
+/* Stamina: Blue/Cyan feel */
+.stamina-fill {
+  background: linear-gradient(90deg, #2196f3, #00bcd4);
+  box-shadow: 0 0 10px rgba(33, 150, 243, 0.3);
+}
 .bar-label {
   position: absolute;
   top: -14px;
@@ -216,6 +221,10 @@
     <div class="status-bar" id="hunger-bar">
       <div class="bar-label">Hunger</div>
       <div class="status-fill hunger-fill" id="hunger-fill" style="width: 80%;"></div>
+    </div>
+    <div class="status-bar" id="stamina-bar">
+      <div class="bar-label">Stamina</div>
+      <div class="status-fill stamina-fill" id="stamina-fill" style="width: 100%;"></div>
     </div>
   </div>
 </div>
@@ -310,6 +319,8 @@ const GRAVITY=22,JUMP_VEL=9,MOVE_SPD=5.2,PLAYER_EYE=1.62;
 const PLAYER_HH=0.9,PLAYER_HW=0.3;
 const REACH=5.5,RDIST=4;
 const SEA=18;
+const CROUCH_EYE_HEIGHT = 1.0;
+const CROUCH_SPEED_MULT = 0.5;
 
 const AIR=0,GRASS=1,DIRT=2,STONE=3,WOOD=4,LEAVES=5,SAND=6,COBBLE=7,PLANKS=8,GRAVEL=9;
 
@@ -725,7 +736,12 @@ const player={
   vel:new THREE.Vector3(),
   yaw:0,pitch:0,
   onGround:false,
-  flying:false
+  flying:false,
+  stamina: 100,
+  maxStamina: 100,
+  isSprinting: false,
+  isCrouching: false,
+  curEyeHeight: PLAYER_EYE
 };
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
@@ -740,13 +756,17 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(!gameActive)return;
+  if(e.code==='ControlLeft'||e.code==='ControlRight'){player.isCrouching=true;return}
   if(e.code==='KeyE'){invOpen=!invOpen;toggleInv(invOpen);return}
   if(e.code==='KeyF'){player.flying=!player.flying;player.vel.y=0;showToast(player.flying?'Flying ON':'Flying OFF');return}
   if(e.code==='KeyS'&&e.ctrlKey){e.preventDefault();saveWorld();return}
   const n=parseInt(e.key);
   if(n>=1&&n<=9)setHbSel(n-1);
 });
-document.addEventListener('keyup',e=>{keys[e.code]=false});
+document.addEventListener('keyup',e=>{
+  keys[e.code]=false;
+  if(e.code==='ControlLeft'||e.code==='ControlRight')player.isCrouching=false;
+});
 document.addEventListener('mousemove',e=>{
   if(!locked||invOpen)return;
   player.yaw-=e.movementX*0.002;
@@ -882,7 +902,8 @@ const sin = Math.sin(player.yaw);
 const dx = dir.x * cos + dir.z * sin;
 const dz = -dir.x * sin + dir.z * cos;
 
-const speed = player.flying ? MOVE_SPD * 1.5 : MOVE_SPD;
+const speedBase = player.isCrouching ? MOVE_SPD * CROUCH_SPEED_MULT : MOVE_SPD;
+const speed = player.flying ? MOVE_SPD * 1.5 : (player.isSprinting && !player.isCrouching ? speedBase * 2 : speedBase);
 player.vel.x = dx * speed;
 player.vel.z = dz * speed;
 
@@ -899,8 +920,12 @@ player.vel.z = dz * speed;
   // Collision & movement
   resolveAABB(player.pos, player.vel, dt);
 
+  // Update camera height smoothly
+  const targetH = player.isCrouching ? CROUCH_EYE_HEIGHT : PLAYER_EYE;
+  player.curEyeHeight += (targetH - player.curEyeHeight) * Math.min(dt * 12, 1);
+
   // Update camera
-  camera.position.copy(player.pos).add(new THREE.Vector3(0, PLAYER_EYE, 0));
+  camera.position.copy(player.pos).add(new THREE.Vector3(0, player.curEyeHeight, 0));
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
 }
 
@@ -914,12 +939,32 @@ function animatePreview(dt) {
   updatePreview();          // placement preview
 }
 
+function updateStamina(dt) {
+  const isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['ArrowUp'] || keys['ArrowDown'] || keys['ArrowLeft'] || keys['ArrowRight'];
+  const wantsToSprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  
+  if (wantsToSprint && isMoving && player.stamina > 0 && !player.flying) {
+    player.isSprinting = true;
+    player.stamina = Math.max(0, player.stamina - 20 * dt);
+  } else {
+    player.isSprinting = false;
+    player.stamina = Math.min(player.maxStamina, player.stamina + 12 * dt);
+  }
+  
+  if (staminaFillEl) {
+    staminaFillEl.style.width = `${(player.stamina / player.maxStamina) * 100}%`;
+  }
+}
+
 function animate(time) {
   requestAnimationFrame(animate);
   const dt = Math.min((time - (animate.lastTime || time)) / 1000, 0.1);
   animate.lastTime = time;
 
-  if (!invOpen) applyPlayerPhysics(dt); // your physics
+  if (!invOpen) {
+    applyPlayerPhysics(dt); 
+    updateStamina(dt);
+  }
 
   updateChunks();        // rebuild chunks
   updateTimeOfDay(dt);   // update TOD
@@ -964,12 +1009,14 @@ let { x: vx, y: vy, z: vz } = vel;
     return false;
   }
   function colH(nx,ny,nz){
-    for(let dy=0;dy<=Math.ceil(PLAYER_EYE);dy++)if(under(nx,ny+dy,nz))return true;
+    const height = player.isCrouching ? CROUCH_EYE_HEIGHT + 0.1 : PLAYER_EYE;
+    for(let dy=0;dy<=Math.ceil(height);dy++)if(under(nx,ny+dy,nz))return true;
     return false;
   }
   y+=vy*dt;player.onGround=false;
+  const currentHeight = player.isCrouching ? CROUCH_EYE_HEIGHT + 0.1 : PLAYER_EYE;
   if(vy<0&&under(x,y,z)){y=Math.floor(y)+1;vy=0;player.onGround=true}
-  else if(vy>0&&under(x,y+PLAYER_EYE,z)){y=Math.ceil(y+PLAYER_EYE)-PLAYER_EYE-0.001;vy=0}
+  else if(vy>0&&under(x,y+currentHeight,z)){y=Math.ceil(y+currentHeight)-currentHeight-0.001;vy=0}
   const nx=x+vx*dt;if(!colH(nx,y,z))x=nx;else vx=0;
   const nz=z+vz*dt;if(!colH(x,y,nz))z=nz;else vz=0;
   pos.set(x,y,z);vel.set(vx,vy,vz);
@@ -1198,6 +1245,7 @@ const craftOutEl=document.getElementById('craft-out');
 const craftOutN=document.getElementById('cout-n');
 const invOverlay=document.getElementById('inventory');
 const toastEl=document.getElementById('toast');
+const staminaFillEl = document.getElementById('stamina-fill');
 const onboarding=document.getElementById('onboarding'),dashboard=document.getElementById('dashboard');
 const loadingEl=document.getElementById('loading'),lfill=document.getElementById('lfill');
 
@@ -1384,7 +1432,8 @@ function loop(now){
       else player.vel.y=0;
       player.pos.addScaledVector(player.vel,dt);
     } else {
-      player.vel.x=mv.x*MOVE_SPD;player.vel.z=mv.z*MOVE_SPD;
+      const speed = player.isSprinting ? MOVE_SPD * 2 : MOVE_SPD;
+      player.vel.x=mv.x*speed;player.vel.z=mv.z*speed;
       player.vel.y-=GRAVITY*dt;
       if(keys['Space']&&player.onGround)player.vel.y=JUMP_VEL;
       resolveAABB(player.pos,player.vel,dt);
@@ -1402,7 +1451,7 @@ function loop(now){
   debugEl.innerHTML=
     `X ${player.pos.x.toFixed(1)}&nbsp; Y ${player.pos.y.toFixed(1)}&nbsp; Z ${player.pos.z.toFixed(1)}<br>`+
     `FPS ${fps} &nbsp; Chunks ${cmap.size} &nbsp; Meshes ${meshMap.size}<br>`+
-    `[WASD] Move &nbsp; [Space] Jump &nbsp; [F] Fly<br>`+
+    `[WASD] Move &nbsp; [Space] Jump &nbsp; [F] Fly &nbsp; [Ctrl] Crouch<br>`+
     `[LMB] Break &nbsp; [RMB] Place &nbsp; [1-9] Hotbar<br>`+
     `[E] Inventory &nbsp; [Ctrl+S] Save`;
 
@@ -1513,4 +1562,4 @@ document.getElementById('tog-chunk').onclick = function(){
 </script>
 </body>
 </html>// Force GitHub update
-// Force GitHub update// Force GitHub update
+// Force GitHub update// Force GitHub update// Force GitHub update
