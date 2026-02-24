@@ -138,12 +138,13 @@
   #lbar{width:220px;height:2px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:16px;overflow:hidden}
   #lfill{height:100%;background:var(--accent);width:0%;transition:width 0.12s}
   /* HOTBAR SLOT COLORS BASED ON BLOCK TYPE */
-.hslot.grass { background-color: #5c9e4a; }    /* lime green */
-.hslot.dirt { background-color: #8b5a2b; }     /* brown */
-.hslot.wood { background-color: #c19a6b; }     /* light brown */
-.hslot.stone { background-color: #7f7f7f; }    /* gray */
-.hslot.planks { background-color: #deb887; }   /* plank/light wood */
-.hslot.leaves { background-color: #2e7d32; }   /* darker green */
+.hslot.grass { background-color: #5c9e4a; }
+.hslot.dirt { background-color: #8b5a2b; }
+.hslot.wood { background-color: #c19a6b; }
+.hslot.stone { background-color: #7f7f7f; }
+.hslot.planks { background-color: #deb887; }
+.hslot.leaves { background-color: #2e7d32; }
+.hslot.water { background-color: #2a6bc4; }
 
 /* maintain selection highlight */
 .hslot.sel { border-color: rgba(255,255,255,0.5); }
@@ -171,20 +172,17 @@
 }
 .status-fill {
   height: 100%;
-  width: 100%; /* Default to full, logic will control this */
+  width: 100%;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
 }
-/* Health: Red to Green gradient feel */
 .health-fill {
   background: linear-gradient(90deg, #ff4b2b, #ff416c);
   box-shadow: 0 0 10px rgba(255, 75, 43, 0.3);
 }
-/* Hunger: Orange/Brown feel */
 .hunger-fill {
   background: linear-gradient(90deg, #f2994a, #f2c94c);
   box-shadow: 0 0 10px rgba(242, 153, 74, 0.3);
 }
-/* Stamina: Blue/Cyan feel */
 .stamina-fill {
   background: linear-gradient(90deg, #2196f3, #00bcd4);
   box-shadow: 0 0 10px rgba(33, 150, 243, 0.3);
@@ -200,6 +198,18 @@
   font-weight: 700;
 }
 
+/* Water overlay tint when submerged */
+#water-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(30, 80, 180, 0.35);
+  z-index: 9;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+#water-overlay.active { opacity: 1; }
+
 @media (max-width: 600px) {
   #status-bars { width: 180px; bottom: 70px; }
 }
@@ -207,6 +217,9 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<!-- Water immersion overlay -->
+<div id="water-overlay"></div>
 
 <div id="hud">
   <div id="crosshair"></div>
@@ -322,196 +335,123 @@ const SEA=18;
 const CROUCH_EYE_HEIGHT = 1.0;
 const CROUCH_SPEED_MULT = 0.5;
 
-const AIR=0,GRASS=1,DIRT=2,STONE=3,WOOD=4,LEAVES=5,SAND=6,COBBLE=7,PLANKS=8,GRAVEL=9;
+// ─── WATER CONSTANTS ──────────────────────────────────────────────────────────
+const WATER_GRAVITY   = 2.5;   // reduced gravity underwater
+const WATER_SPEED_MULT = 0.4;  // 40% movement speed in water
+const WATER_SWIM_UP   = 4.5;   // upward vel when Space pressed in water
+const WATER_SWIM_DOWN = -3.0;  // downward vel when Crouch pressed in water
+
+const AIR=0,GRASS=1,DIRT=2,STONE=3,WOOD=4,LEAVES=5,SAND=6,COBBLE=7,PLANKS=8,GRAVEL=9,WATER=10;
 
 const BCOLOR = {
-  [GRASS]: [0.35, 0.55, 0.24],
-  [DIRT]: [0.54, 0.37, 0.22],
-  [STONE]: [0.52, 0.52, 0.52],
-  [WOOD]: [0.48, 0.36, 0.22],
+  [GRASS]:  [0.35, 0.55, 0.24],
+  [DIRT]:   [0.54, 0.37, 0.22],
+  [STONE]:  [0.52, 0.52, 0.52],
+  [WOOD]:   [0.48, 0.36, 0.22],
   [LEAVES]: [0.18, 0.44, 0.16],
-  [SAND]: [0.88, 0.82, 0.48],
+  [SAND]:   [0.88, 0.82, 0.48],
   [COBBLE]: [0.44, 0.44, 0.44],
   [PLANKS]: [0.78, 0.62, 0.38],
-  [GRAVEL]: [0.50, 0.48, 0.46]
+  [GRAVEL]: [0.50, 0.48, 0.46],
+  [WATER]:  [0.20, 0.40, 0.90]
 };
 const BNAME = {
-  [GRASS]: 'Grass',
-  [DIRT]: 'Dirt',
-  [STONE]: 'Stone',
-  [WOOD]: 'Wood',
+  [GRASS]:  'Grass',
+  [DIRT]:   'Dirt',
+  [STONE]:  'Stone',
+  [WOOD]:   'Wood',
   [LEAVES]: 'Leaves',
-  [SAND]: 'Sand',
+  [SAND]:   'Sand',
   [COBBLE]: 'Cobble',
   [PLANKS]: 'Planks',
-  [GRAVEL]: 'Gravel'
+  [GRAVEL]: 'Gravel',
+  [WATER]:  'Water'
 };
+
+// WATER is intentionally NOT in SOLID — non-solid, swimmable
 const SOLID=new Set([GRASS,DIRT,STONE,WOOD,LEAVES,SAND,COBBLE,PLANKS,GRAVEL]);
 const isSolid=id=>SOLID.has(id);
+const isWaterBlock=id=>id===WATER;
+
+// ─── WATER DETECTION HELPER ───────────────────────────────────────────────────
+function isInWater(pos){
+  // Check eye-level and foot-level for immersion
+  const bx=Math.floor(pos.x);
+  const bz=Math.floor(pos.z);
+  const eyeY=Math.floor(pos.y+player.curEyeHeight*0.6);
+  const footY=Math.floor(pos.y+0.1);
+  return getBlock(bx,eyeY,bz)===WATER || getBlock(bx,footY,bz)===WATER;
+}
+
+function isHeadInWater(pos){
+  const bx=Math.floor(pos.x);
+  const bz=Math.floor(pos.z);
+  const eyeY=Math.floor(pos.y+player.curEyeHeight);
+  return getBlock(bx,eyeY,bz)===WATER;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CRAFTING SYSTEM (LOCKED 2x2 PATTERN ENGINE)
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ─── 1️⃣ RECIPE REGISTRY ─────────────────────────────────────────────────────
-
 const RecipeRegistry = (function () {
-
   const recipes = [];
-
   function validatePattern(p) {
-    if (!Array.isArray(p) || p.length !== 4) {
-      throw new Error('Recipe pattern must be length 4');
-    }
+    if (!Array.isArray(p) || p.length !== 4) throw new Error('Recipe pattern must be length 4');
   }
-
   function register(pattern, outputId, outputCount) {
     validatePattern(pattern);
-
-    recipes.push({
-      pattern: Object.freeze([...pattern]), // deterministic freeze
-      out: outputId,
-      n: outputCount
-    });
+    recipes.push({ pattern: Object.freeze([...pattern]), out: outputId, n: outputCount });
   }
-
   function findMatch(gridIds) {
     for (const r of recipes) {
       let match = true;
-      for (let i = 0; i < 4; i++) {
-        if (r.pattern[i] !== gridIds[i]) {
-          match = false;
-          break;
-        }
-      }
+      for (let i = 0; i < 4; i++) { if (r.pattern[i] !== gridIds[i]) { match = false; break; } }
       if (match) return r;
     }
     return null;
   }
-
-  return {
-    register,
-    findMatch
-  };
-
+  return { register, findMatch };
 })();
 
-
-// ─── REGISTER RECIPES (PATTERN-ONLY) ───────────────────────────────────────
-
-RecipeRegistry.register(
-  [WOOD, WOOD, WOOD, WOOD],
-  PLANKS,
-  4
-);
-
-RecipeRegistry.register(
-  [SAND, SAND, SAND, SAND],
-  GRAVEL,
-  4
-);
-
-RecipeRegistry.register(
-  [COBBLE, COBBLE, COBBLE, COBBLE],
-  STONE,
-  4
-);
-
-RecipeRegistry.register(
-  [PLANKS, PLANKS, PLANKS, PLANKS],
-  WOOD,
-  2
-);
-
-
-// ─── 2️⃣ CRAFTING GRID STATE ────────────────────────────────────────────────
+RecipeRegistry.register([WOOD, WOOD, WOOD, WOOD], PLANKS, 4);
+RecipeRegistry.register([SAND, SAND, SAND, SAND], GRAVEL, 4);
+RecipeRegistry.register([COBBLE, COBBLE, COBBLE, COBBLE], STONE, 4);
+RecipeRegistry.register([PLANKS, PLANKS, PLANKS, PLANKS], WOOD, 2);
 
 const CraftingGrid = (function () {
-
   const slots = new Array(4).fill(null).map(() => ({ id: 0, n: 0 }));
-
-  function getIds() {
-    return slots.map(s => s.id);
-  }
-
+  function getIds() { return slots.map(s => s.id); }
   function decrementAll() {
     for (let i = 0; i < 4; i++) {
-      if (slots[i].id !== 0) {
-        slots[i].n--;
-        if (slots[i].n <= 0) {
-          slots[i] = { id: 0, n: 0 };
-        }
-      }
+      if (slots[i].id !== 0) { slots[i].n--; if (slots[i].n <= 0) slots[i] = { id: 0, n: 0 }; }
     }
   }
-
-  return {
-    slots,
-    getIds,
-    decrementAll
-  };
-
+  return { slots, getIds, decrementAll };
 })();
 
-// 👇 ADD THIS RIGHT HERE
 let cresult = { id: 0, n: 0 };
-
-// ─── 3️⃣ PATTERN MATCHER (DETERMINISTIC) ─────────────────────────────────────
 
 function evaluateCraftResult() {
   const ids = CraftingGrid.getIds();
   const recipe = RecipeRegistry.findMatch(ids);
-
-  if (!recipe) {
-    cresult = { id: 0, n: 0 };
-  } else {
-    cresult = { id: recipe.out, n: recipe.n };
-  }
-
+  cresult = recipe ? { id: recipe.out, n: recipe.n } : { id: 0, n: 0 };
   Bus.emit('inv');
 }
 
-
-// ─── 4️⃣ CRAFT EXECUTION (NO RECURSION) ─────────────────────────────────────
-
 function executeCraft() {
-
   const ids = CraftingGrid.getIds();
   const recipe = RecipeRegistry.findMatch(ids);
-
-  if (!recipe) return;
-  if (!cresult.id) return;
-
-  // Validate enough materials exist in grid
+  if (!recipe || !cresult.id) return;
   for (let i = 0; i < 4; i++) {
-    if (CraftingGrid.slots[i].id !== 0 &&
-        CraftingGrid.slots[i].n <= 0) {
-      return;
-    }
+    if (CraftingGrid.slots[i].id !== 0 && CraftingGrid.slots[i].n <= 0) return;
   }
-
-  // Add output to inventory
   invAdd(recipe.out, recipe.n);
-
-  // Consume 1 from each occupied slot
   CraftingGrid.decrementAll();
-
   evaluateCraftResult();
 }
 
-
-// ─── 5️⃣ INVENTORY INTEGRATION HOOKS ─────────────────────────────────────────
-
-// Replace old crafting functions:
-
-function evalCraft() {
-  evaluateCraftResult();
-}
-
-function takeCraft() {
-  executeCraft();
-}
-
+function evalCraft() { evaluateCraftResult(); }
+function takeCraft() { executeCraft(); }
 
 // ─── PERMUTATION TABLE (PERLIN) ───────────────────────────────────────────────
 const _p=(()=>{
@@ -550,11 +490,19 @@ function genChunk(cx,cz){
       const h=Math.min(Math.floor(SEA+fbm(wx,wz)*30+4),CH-2);
       for(let ly=0;ly<CH;ly++){
         let b=AIR;
-        if(ly===0)b=STONE;
-        else if(ly<h-4)b=STONE;
-        else if(ly<h-1)b=DIRT;
-        else if(ly===h-1)b=h<=SEA?SAND:GRASS;
+        if(ly===0) b=STONE;
+        else if(ly<h-4) b=STONE;
+        else if(ly<h-1) b=DIRT;
+        else if(ly===h-1) b=h<=SEA?SAND:GRASS;
+        // ─── WATER FILL: below sea level where terrain is below sea ───
+        else if(ly<=SEA && b===AIR) b=WATER;
         data[vIdx(lx,ly,lz)]=b;
+      }
+      // Fill water from terrain top up to SEA level in ocean/lake areas
+      if(h-1 < SEA){
+        for(let ly=h;ly<=SEA;ly++){
+          if(data[vIdx(lx,ly,lz)]===AIR) data[vIdx(lx,ly,lz)]=WATER;
+        }
       }
       if(h>SEA+2&&Math.random()<0.012&&lx>2&&lx<CS-3&&lz>2&&lz<CS-3){
         for(let dy=0;dy<4;dy++)if(h+dy<CH)data[vIdx(lx,h+dy,lz)]=WOOD;
@@ -601,17 +549,28 @@ const FACES=[
   {d:[0,0,-1],v:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]],s:0.6},
 ];
 
+// ─── WATER WAVE ANIMATION STATE ──────────────────────────────────────────────
+// We store water mesh refs separately so we can animate them
+const waterMeshMap = new Map();
+
 function buildMesh(ch){
   const{data,cx,cz}=ch;
-  const pos=[],col=[],nrm=[],tri=[];
-  let vi=0;
+
+  // Separate geometry arrays for solid and water
+  const sPos=[],sCol=[],sNrm=[],sTri=[];
+  const wPos=[],wCol=[],wNrm=[],wTri=[];
+  let svi=0,wvi=0;
+
   for(let ly=0;ly<CH;ly++){
     for(let lz=0;lz<CS;lz++){
       for(let lx=0;lx<CS;lx++){
         const b=data[vIdx(lx,ly,lz)];
         if(b===AIR)continue;
+
+        const isWater=b===WATER;
         const bc=BCOLOR[b]||[1,0,1];
         const wx=cx*CS+lx,wz=cz*CS+lz;
+
         for(const f of FACES){
           const[dx,dy,dz]=f.d;
           const nx2=lx+dx,ny2=ly+dy,nz2=lz+dz;
@@ -619,27 +578,98 @@ function buildMesh(ch){
           if(nx2<0||nx2>=CS||nz2<0||nz2>=CS)nb=getBlock(wx+dx,ny2,wz+dz);
           else if(ny2<0||ny2>=CH)nb=ny2<0?STONE:AIR;
           else nb=data[vIdx(nx2,ny2,nz2)];
-          if(isSolid(nb))continue;
-          const s=f.s;
-          for(const v of f.v){
-            pos.push(wx+v[0],ly+v[1],wz+v[2]);
-            col.push(bc[0]*s,bc[1]*s,bc[2]*s);
-            nrm.push(dx,dy,dz);
+
+          // For water: only render face if neighbor is AIR (not other water, not solid)
+          // For solid: skip if neighbor is solid OR water (water doesn't occlude solid)
+          if(isWater){
+            if(nb!==AIR)continue; // only show water faces bordering air
+          } else {
+            if(isSolid(nb))continue; // standard solid-solid culling
+            // Don't cull solid faces adjacent to water — water is transparent
           }
-          tri.push(vi,vi+1,vi+2,vi,vi+2,vi+3);
-          vi+=4;
+
+          const s=f.s;
+          if(isWater){
+            for(const v of f.v){
+              // Slightly lower the top face of water for visual depth
+              const yOff=(f.d[1]===1)?-0.08:0;
+              wPos.push(wx+v[0],ly+v[1]+yOff,wz+v[2]);
+              wCol.push(bc[0]*s,bc[1]*s,bc[2]*s);
+              wNrm.push(dx,dy,dz);
+            }
+            wTri.push(wvi,wvi+1,wvi+2,wvi,wvi+2,wvi+3);
+            wvi+=4;
+          } else {
+            for(const v of f.v){
+              sPos.push(wx+v[0],ly+v[1],wz+v[2]);
+              sCol.push(bc[0]*s,bc[1]*s,bc[2]*s);
+              sNrm.push(dx,dy,dz);
+            }
+            sTri.push(svi,svi+1,svi+2,svi,svi+2,svi+3);
+            svi+=4;
+          }
         }
       }
     }
   }
-  if(!tri.length)return null;
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
-  g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
-  g.setIndex(tri);
-  g.computeBoundingSphere();
-  return new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));
+
+  // Build solid mesh
+  let solidMesh=null;
+  if(sTri.length){
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(sPos,3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(sCol,3));
+    g.setAttribute('normal',new THREE.Float32BufferAttribute(sNrm,3));
+    g.setIndex(sTri);
+    g.computeBoundingSphere();
+    solidMesh=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));
+  }
+
+  // Build water mesh (semi-transparent, separate)
+  let waterMesh=null;
+  if(wTri.length){
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(new Float32Array(wPos),3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(wCol,3));
+    g.setAttribute('normal',new THREE.Float32BufferAttribute(wNrm,3));
+    g.setIndex(wTri);
+    g.computeBoundingSphere();
+    waterMesh=new THREE.Mesh(g,new THREE.MeshLambertMaterial({
+      vertexColors:true,
+      transparent:true,
+      opacity:0.62,
+      depthWrite:false,
+      side:THREE.DoubleSide
+    }));
+    waterMesh.userData.isWater=true;
+    waterMesh.userData.basePositions=new Float32Array(wPos);
+    waterMesh.renderOrder=1; // render after solid
+  }
+
+  return { solidMesh, waterMesh };
+}
+
+// ─── WATER WAVE ANIMATION ─────────────────────────────────────────────────────
+let waveTime=0;
+
+function animateWaterMeshes(dt){
+  waveTime+=dt;
+  for(const[k,wm] of waterMeshMap){
+    if(!wm||!wm.geometry)continue;
+    const posAttr=wm.geometry.attributes.position;
+    const base=wm.userData.basePositions;
+    if(!base)continue;
+    for(let i=0;i<posAttr.count;i++){
+      const bx=base[i*3];
+      const bz=base[i*3+2];
+      // Only animate Y of top-face verts (original Y is integer = top surface)
+      const origY=base[i*3+1];
+      // Small ripple: only on water surface (not side faces)
+      const ripple=Math.sin(waveTime*1.8+bx*0.7+bz*0.5)*0.04;
+      posAttr.setY(i,origY+ripple);
+    }
+    posAttr.needsUpdate=true;
+  }
 }
 
 // ─── THREE.JS SETUP ───────────────────────────────────────────────────────────
@@ -647,6 +677,7 @@ const cvs=document.getElementById('c');
 const renderer=new THREE.WebGLRenderer({canvas:cvs,antialias:false,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.sortObjects=true; // needed for transparency sorting
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x7ecaef);
@@ -665,67 +696,31 @@ window.addEventListener('resize',()=>{
   camera.updateProjectionMatrix();
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TIME OF DAY SYSTEM (LOCKED / ZERO RENDER COST)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// 15 minutes full cycle
-const DAY_LENGTH = 15 * 60; // seconds
-
-let worldTime = 0; // seconds
-
-// Capture existing lights (DO NOT CREATE NEW ONES)
+// ─── TIME OF DAY ─────────────────────────────────────────────────────────────
+const DAY_LENGTH = 15 * 60;
+let worldTime = 0;
 const ambientLight = scene.children.find(o => o.isAmbientLight);
-
-// Sky key colors
 const SKY_DAY     = new THREE.Color(0x7ecaef);
 const SKY_SUNSET  = new THREE.Color(0xffb27a);
 const SKY_NIGHT   = new THREE.Color(0x0d1320);
 const SKY_SUNRISE = new THREE.Color(0xffd6a3);
 
-function lerpColor(c1, c2, t) {
-  return c1.clone().lerp(c2, t);
-}
+function lerpColor(c1, c2, t){ return c1.clone().lerp(c2, t); }
 
-function updateTimeOfDay(dt) {
-
+function updateTimeOfDay(dt){
   worldTime += dt;
   if (worldTime >= DAY_LENGTH) worldTime -= DAY_LENGTH;
-
-  const phase = worldTime / DAY_LENGTH; // 0 → 1
-
+  const phase = worldTime / DAY_LENGTH;
   let skyColor;
-
-  // ─── SKY INTERPOLATION (4 PHASE CURVE) ───
-  if (phase < 0.25) {
-    skyColor = lerpColor(SKY_SUNRISE, SKY_DAY, phase / 0.25);
-  } 
-  else if (phase < 0.5) {
-    skyColor = lerpColor(SKY_DAY, SKY_SUNSET, (phase - 0.25) / 0.25);
-  } 
-  else if (phase < 0.75) {
-    skyColor = lerpColor(SKY_SUNSET, SKY_NIGHT, (phase - 0.5) / 0.25);
-  } 
-  else {
-    skyColor = lerpColor(SKY_NIGHT, SKY_SUNRISE, (phase - 0.75) / 0.25);
-  }
-
+  if (phase < 0.25) skyColor = lerpColor(SKY_SUNRISE, SKY_DAY, phase / 0.25);
+  else if (phase < 0.5) skyColor = lerpColor(SKY_DAY, SKY_SUNSET, (phase - 0.25) / 0.25);
+  else if (phase < 0.75) skyColor = lerpColor(SKY_SUNSET, SKY_NIGHT, (phase - 0.5) / 0.25);
+  else skyColor = lerpColor(SKY_NIGHT, SKY_SUNRISE, (phase - 0.75) / 0.25);
   scene.background.copy(skyColor);
   scene.fog.color.copy(skyColor);
-
-  // ─── SUN ROTATION (SINGLE VECTOR UPDATE) ───
   const sunAngle = phase * Math.PI * 2;
-
   const radius = 140;
-  sun.position.set(
-    Math.cos(sunAngle) * radius,
-    Math.sin(sunAngle) * radius,
-    60
-  );
-
-  // ─── SUBTLE AMBIENT SHIFT ───
-  // Night ≈ 0.25
-  // Day   ≈ 0.60
+  sun.position.set(Math.cos(sunAngle)*radius, Math.sin(sunAngle)*radius, 60);
   const daylightFactor = Math.max(0, Math.sin(sunAngle));
   ambientLight.intensity = 0.25 + daylightFactor * 0.35;
 }
@@ -741,7 +736,8 @@ const player={
   maxStamina: 100,
   isSprinting: false,
   isCrouching: false,
-  curEyeHeight: PLAYER_EYE
+  curEyeHeight: PLAYER_EYE,
+  inWater: false
 };
 
 // ─── INPUT ────────────────────────────────────────────────────────────────────
@@ -788,7 +784,6 @@ cvs.addEventListener('wheel',e=>{
 
 // ─── INVENTORY ───────────────────────────────────────────────────────────────
 const inv=new Array(INV_TOTAL).fill(null).map(()=>({id:0,n:0}));
-
 let hbSel = 0;
 
 function invAdd(id,count){
@@ -807,7 +802,6 @@ function invDec(i,n=1){
 function hbBlock(){const s=inv[hbSel];return s&&s.id?s.id:0}
 function setHbSel(i){hbSel=i;Bus.emit('inv')}
 
-
 // ─── RAYCAST ─────────────────────────────────────────────────────────────────
 function rayTarget(){
   const dir=new THREE.Vector3(0,0,-1);
@@ -823,38 +817,26 @@ function rayTarget(){
   return null;
 }
 
-// ─── 1️⃣ PLACEMENT PREVIEW SETUP ─────────────────────────────────────────────
+// ─── PLACEMENT PREVIEW ────────────────────────────────────────────────────────
 let previewMesh = null;
-
-// Create highlight material (semi-transparent, glowing)
 const previewMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffff00, // bright yellow
-  opacity: 0.45,
-  transparent: true,
-  depthWrite: false,
+  color: 0xffff00, opacity: 0.45, transparent: true, depthWrite: false,
 });
-
-// Create a unit cube geometry
 const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
 
-// Add preview mesh to scene
-function initPreview() {
+function initPreview(){
   previewMesh = new THREE.Mesh(cubeGeo, previewMaterial);
-  previewMesh.visible = false; // hide initially
+  previewMesh.visible = false;
+  previewMesh.material.wireframe = true;
   scene.add(previewMesh);
 }
 
-// ─── 2️⃣ RAYCAST + VALIDATION ───────────────────────────────────────────────
-function getPlacementTarget() {
+function getPlacementTarget(){
   const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
   const ox = player.pos.x, oy = player.pos.y + PLAYER_EYE - 0.1, oz = player.pos.z;
   let prev = null;
-
   for (let t = 0.05; t < REACH; t += 0.05) {
-    const x = Math.floor(ox + dir.x * t),
-          y = Math.floor(oy + dir.y * t),
-          z = Math.floor(oz + dir.z * t);
-
+    const x=Math.floor(ox+dir.x*t), y=Math.floor(oy+dir.y*t), z=Math.floor(oz+dir.z*t);
     const b = getBlock(x, y, z);
     if (isSolid(b)) return { wx: prev.wx, wy: prev.wy, wz: prev.wz, valid: true };
     prev = { wx: x, wy: y, wz: z };
@@ -862,125 +844,102 @@ function getPlacementTarget() {
   return null;
 }
 
-// ─── 3️⃣ UPDATE PREVIEW POSITION ─────────────────────────────────────────────
-function updatePreview() {
+function updatePreview(){
   if (!previewMesh) return;
-
   const target = getPlacementTarget();
-  if (!target || !target.valid || hbBlock() === 0) {
-    previewMesh.visible = false;
-    return;
-  }
-
-  const px = Math.floor(player.pos.x), py = Math.floor(player.pos.y), pz = Math.floor(player.pos.z);
-
-  // Prevent placing inside player
-  if (target.wx === px && target.wz === pz && (target.wy === py || target.wy === py + 1)) {
-    previewMesh.visible = false;
-    return;
-  }
-
+  if (!target || !target.valid || hbBlock() === 0) { previewMesh.visible = false; return; }
+  const px=Math.floor(player.pos.x), py=Math.floor(player.pos.y), pz=Math.floor(player.pos.z);
+  if (target.wx===px && target.wz===pz && (target.wy===py || target.wy===py+1)) { previewMesh.visible = false; return; }
   previewMesh.position.set(target.wx + 0.5, target.wy + 0.5, target.wz + 0.5);
   previewMesh.material.color.setHex(0x5c9e4a);
   previewMesh.material.opacity = 0.45;
   previewMesh.visible = true;
 }
 
-// ─── PLAYER PHYSICS ───────────────────────────────────────────────
+// ─── PLAYER PHYSICS (WITH WATER) ────────────────────────────────────────────
 function applyPlayerPhysics(dt) {
-  // Input movement
-const dir = new THREE.Vector3();
-if (keys['KeyW']) dir.z -= 1;
-if (keys['KeyS']) dir.z += 1;
-if (keys['KeyA']) dir.x -= 1;
-if (keys['KeyD']) dir.x += 1;
-dir.normalize();
+  const inWater = isInWater(player.pos);
+  player.inWater = inWater;
 
-// Rotate direction by player yaw
-const cos = Math.cos(player.yaw);
-const sin = Math.sin(player.yaw);
-const dx = dir.x * cos + dir.z * sin;
-const dz = -dir.x * sin + dir.z * cos;
+  const dir = new THREE.Vector3();
+  if (keys['KeyW']) dir.z -= 1;
+  if (keys['KeyS']) dir.z += 1;
+  if (keys['KeyA']) dir.x -= 1;
+  if (keys['KeyD']) dir.x += 1;
+  dir.normalize();
 
-const speedBase = player.isCrouching ? MOVE_SPD * CROUCH_SPEED_MULT : MOVE_SPD;
-const speed = player.flying ? MOVE_SPD * 1.5 : (player.isSprinting && !player.isCrouching ? speedBase * 2 : speedBase);
-player.vel.x = dx * speed;
-player.vel.z = dz * speed;
+  const cos = Math.cos(player.yaw);
+  const sin = Math.sin(player.yaw);
+  const dx = dir.x * cos + dir.z * sin;
+  const dz = -dir.x * sin + dir.z * cos;
 
-  // Flying or gravity
+  let speedBase;
+  if (inWater) {
+    speedBase = MOVE_SPD * WATER_SPEED_MULT;
+  } else if (player.isCrouching) {
+    speedBase = MOVE_SPD * CROUCH_SPEED_MULT;
+  } else {
+    speedBase = MOVE_SPD;
+  }
+
+  const speed = player.flying ? MOVE_SPD * 1.5 : (player.isSprinting && !player.isCrouching && !inWater ? speedBase * 2 : speedBase);
+  player.vel.x = dx * speed;
+  player.vel.z = dz * speed;
+
   if (player.flying) {
     if (keys['Space']) player.vel.y = MOVE_SPD;
     else if (keys['ShiftLeft']) player.vel.y = -MOVE_SPD;
     else player.vel.y = 0;
+  } else if (inWater) {
+    // Buoyancy: reduce gravity strongly
+    player.vel.y -= WATER_GRAVITY * dt;
+    // Dampen vertical velocity in water
+    player.vel.y *= Math.pow(0.88, dt * 60);
+    // Swimming up / down
+    if (keys['Space']) player.vel.y = WATER_SWIM_UP;
+    else if (player.isCrouching) player.vel.y = WATER_SWIM_DOWN;
   } else {
     player.vel.y -= GRAVITY * dt;
     if (player.onGround && keys['Space']) player.vel.y = JUMP_VEL;
   }
 
-  // Collision & movement
   resolveAABB(player.pos, player.vel, dt);
 
-  // Update camera height smoothly
   const targetH = player.isCrouching ? CROUCH_EYE_HEIGHT : PLAYER_EYE;
   player.curEyeHeight += (targetH - player.curEyeHeight) * Math.min(dt * 12, 1);
 
-  // Update camera
   camera.position.copy(player.pos).add(new THREE.Vector3(0, player.curEyeHeight, 0));
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
-}
 
-// ─── 4️⃣ INTEGRATE INTO MAIN LOOP ───────────────────────────────────────────
-initPreview();
-previewMesh.material.wireframe = true;
-
-function animatePreview(dt) {
-  updateTimeOfDay(dt);     // existing TOD system
-  updateChunks();           // existing chunk meshing
-  updatePreview();          // placement preview
+  // Water overlay when head is submerged
+  const headUnder = isHeadInWater(player.pos);
+  const waterOverlay = document.getElementById('water-overlay');
+  if (waterOverlay) waterOverlay.classList.toggle('active', headUnder);
 }
 
 function updateStamina(dt) {
-  const isMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['ArrowUp'] || keys['ArrowDown'] || keys['ArrowLeft'] || keys['ArrowRight'];
-  const wantsToSprint = keys['ShiftLeft'] || keys['ShiftRight'];
-  
-  if (wantsToSprint && isMoving && player.stamina > 0 && !player.flying) {
+  const isMoving = keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD'];
+  const wantsToSprint = keys['ShiftLeft']||keys['ShiftRight'];
+  const inWater = player.inWater;
+
+  if (inWater && isMoving) {
+    // Swimming drains stamina slightly
+    player.isSprinting = false;
+    player.stamina = Math.max(0, player.stamina - 10 * dt);
+  } else if (wantsToSprint && isMoving && player.stamina > 0 && !player.flying && !inWater) {
     player.isSprinting = true;
     player.stamina = Math.max(0, player.stamina - 20 * dt);
   } else {
     player.isSprinting = false;
     player.stamina = Math.min(player.maxStamina, player.stamina + 12 * dt);
   }
-  
+
   if (staminaFillEl) {
     staminaFillEl.style.width = `${(player.stamina / player.maxStamina) * 100}%`;
   }
 }
 
-function animate(time) {
-  requestAnimationFrame(animate);
-  const dt = Math.min((time - (animate.lastTime || time)) / 1000, 0.1);
-  animate.lastTime = time;
-
-  if (!invOpen) {
-    applyPlayerPhysics(dt); 
-    updateStamina(dt);
-  }
-
-  updateChunks();        // rebuild chunks
-  updateTimeOfDay(dt);   // update TOD
-
-  updatePreview();       // <-- placement preview updated here every frame
-
-  renderer.render(scene, camera);
-}
-
-
-// Hook into inventory updates safely
-window.addEventListener('DOMContentLoaded', () => {
-  Bus.emit('inv'); // now all slots exist
-});
-requestAnimationFrame(animate);
-
+// ─── BREAK / PLACE ────────────────────────────────────────────────────────────
 function doBreak(){
   const t=rayTarget();if(!t)return;
   const b=getBlock(t.wx,t.wy,t.wz);if(!isSolid(b))return;
@@ -1000,8 +959,8 @@ function doPlace(){
 // ─── COLLISION ───────────────────────────────────────────────────────────────
 function resolveAABB(pos,vel,dt){
   const HW=PLAYER_HW,HH=PLAYER_HH;
-  let { x, y, z } = pos;
-let { x: vx, y: vy, z: vz } = vel;
+  let{x,y,z}=pos;
+  let{x:vx,y:vy,z:vz}=vel;
   function under(nx,ny,nz){
     const x0=Math.floor(nx-HW+0.001),x1=Math.floor(nx+HW-0.001);
     const z0=Math.floor(nz-HW+0.001),z1=Math.floor(nz+HW-0.001);
@@ -1009,12 +968,12 @@ let { x: vx, y: vy, z: vz } = vel;
     return false;
   }
   function colH(nx,ny,nz){
-    const height = player.isCrouching ? CROUCH_EYE_HEIGHT + 0.1 : PLAYER_EYE;
+    const height=player.isCrouching?CROUCH_EYE_HEIGHT+0.1:PLAYER_EYE;
     for(let dy=0;dy<=Math.ceil(height);dy++)if(under(nx,ny+dy,nz))return true;
     return false;
   }
   y+=vy*dt;player.onGround=false;
-  const currentHeight = player.isCrouching ? CROUCH_EYE_HEIGHT + 0.1 : PLAYER_EYE;
+  const currentHeight=player.isCrouching?CROUCH_EYE_HEIGHT+0.1:PLAYER_EYE;
   if(vy<0&&under(x,y,z)){y=Math.floor(y)+1;vy=0;player.onGround=true}
   else if(vy>0&&under(x,y+currentHeight,z)){y=Math.ceil(y+currentHeight)-currentHeight-0.001;vy=0}
   const nx=x+vx*dt;if(!colH(nx,y,z))x=nx;else vx=0;
@@ -1024,6 +983,7 @@ let { x: vx, y: vy, z: vz } = vel;
 
 // ─── CHUNK MANAGER ───────────────────────────────────────────────────────────
 const meshMap=new Map();
+
 function pcx(wx){return Math.floor(wx/CS)}
 function pcz(wz){return Math.floor(wz/CS)}
 
@@ -1033,19 +993,46 @@ function updateChunks(){
     const k=ck(cx+dx,cz+dz);
     if(!cmap.has(k))genChunk(cx+dx,cz+dz);
   }
+
   for(const k of dirty){
     const ch=cmap.get(k);if(!ch){dirty.delete(k);continue}
-    if(meshMap.has(k)){const m=meshMap.get(k);scene.remove(m);m.geometry.dispose();m.material.dispose();meshMap.delete(k)}
-    const m=buildMesh(ch);if(m){scene.add(m);meshMap.set(k,m)}
+
+    // Remove old solid mesh
+    if(meshMap.has(k)){
+      const m=meshMap.get(k);
+      scene.remove(m);m.geometry.dispose();m.material.dispose();meshMap.delete(k);
+    }
+    // Remove old water mesh
+    if(waterMeshMap.has(k)){
+      const m=waterMeshMap.get(k);
+      scene.remove(m);m.geometry.dispose();m.material.dispose();waterMeshMap.delete(k);
+    }
+
+    const{solidMesh,waterMesh}=buildMesh(ch);
+    if(solidMesh){scene.add(solidMesh);meshMap.set(k,solidMesh)}
+    if(waterMesh){scene.add(waterMesh);waterMeshMap.set(k,waterMesh)}
     dirty.delete(k);
   }
+
   for(const[k,ch] of cmap){
-    if(!meshMap.has(k)){const m=buildMesh(ch);if(m){scene.add(m);meshMap.set(k,m)}}
+    if(!meshMap.has(k)&&!waterMeshMap.has(k)){
+      const{solidMesh,waterMesh}=buildMesh(ch);
+      if(solidMesh){scene.add(solidMesh);meshMap.set(k,solidMesh)}
+      if(waterMesh){scene.add(waterMesh);waterMeshMap.set(k,waterMesh)}
+    }
   }
+
+  // Cull distant meshes
   for(const[k,m] of meshMap){
     const[kcx,kcz]=k.split('|').map(Number);
     if(Math.abs(kcx-cx)>RDIST+1||Math.abs(kcz-cz)>RDIST+1){
       scene.remove(m);m.geometry.dispose();m.material.dispose();meshMap.delete(k);
+    }
+  }
+  for(const[k,m] of waterMeshMap){
+    const[kcx,kcz]=k.split('|').map(Number);
+    if(Math.abs(kcx-cx)>RDIST+1||Math.abs(kcz-cz)>RDIST+1){
+      scene.remove(m);m.geometry.dispose();m.material.dispose();waterMeshMap.delete(k);
     }
   }
   for(const[k] of cmap){
@@ -1059,183 +1046,82 @@ function spawnY(wx,wz){
   return SEA+2;
 }
 
-// ─── SAVE / LOAD (DELTA-ONLY, NON-BLOCKING) ────────────────────────────────
-
+// ─── SAVE / LOAD ─────────────────────────────────────────────────────────────
 const SAVE_KEY = 'minrecraft_save_v2';
 let saveTimer = null;
 let pendingSave = false;
 
-/*
-DATA FORMAT (v2)
-
-{
-  v: 2,
-  p: { x,y,z,yaw,pitch },
-  inv: [ {id,n}, ... ],
-  chunks: {
-    "cx|cz": [ [index, blockId], ... ]   // ONLY modified blocks
-  }
-}
-*/
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 1️⃣  SAVE SERIALIZER (DELTA ONLY)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function serializeWorld() {
-  const save = {
-    v: 2,
-    p: {
-      x: player.pos.x,
-      y: player.pos.y,
-      z: player.pos.z,
-      yaw: player.yaw,
-      pitch: player.pitch
-    },
-    inv: inv.map(s => ({ id: s.id, n: s.n })),
-    chunks: {}
+function serializeWorld(){
+  const save={
+    v:2,
+    p:{x:player.pos.x,y:player.pos.y,z:player.pos.z,yaw:player.yaw,pitch:player.pitch},
+    inv:inv.map(s=>({id:s.id,n:s.n})),
+    chunks:{}
   };
-
-  // Only serialize modified chunks
-  for (const key of dirty) {
-    const ch = cmap.get(key);
-    if (!ch) continue;
-
-    const base = genChunk(ch.cx, ch.cz).data; // regenerated baseline
-    const delta = [];
-
-    for (let i = 0; i < ch.data.length; i++) {
-      if (ch.data[i] !== base[i]) {
-        delta.push([i, ch.data[i]]);
-      }
-    }
-
-    if (delta.length) {
-      save.chunks[key] = delta;
-    }
+  for(const key of dirty){
+    const ch=cmap.get(key);if(!ch)continue;
+    const base=genChunk(ch.cx,ch.cz).data;
+    const delta=[];
+    for(let i=0;i<ch.data.length;i++){if(ch.data[i]!==base[i])delta.push([i,ch.data[i]])}
+    if(delta.length)save.chunks[key]=delta;
   }
-
   return JSON.stringify(save);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2️⃣  LOAD INITIALIZER
-// ─────────────────────────────────────────────────────────────────────────────
-
-function loadWorld() {
-  const raw = localStorage.getItem(SAVE_KEY);
-  if (!raw) return false;
-
+function loadWorld(){
+  const raw=localStorage.getItem(SAVE_KEY);
+  if(!raw)return false;
   let data;
-
-  try {
-    data = JSON.parse(raw);
-  } catch (e) {
-    safeCorruptionReset();
-    return false;
-  }
-
-  if (!data || data.v !== 2 || !data.p || !Array.isArray(data.inv)) {
-    safeCorruptionReset();
-    return false;
-  }
-
-  try {
-    // Restore player
-    player.pos.set(data.p.x, data.p.y, data.p.z);
-    player.yaw = data.p.yaw;
-    player.pitch = data.p.pitch;
-
-    // Restore inventory
-    data.inv.forEach((s, i) => {
-      if (i < inv.length) {
-        inv[i] = { id: s.id || 0, n: s.n || 0 };
-      }
-    });
-
-    // Restore modified chunks
-    if (data.chunks) {
-      for (const key in data.chunks) {
-        const [cx, cz] = key.split('|').map(Number);
-        const ch = genChunk(cx, cz);
-
-        const delta = data.chunks[key];
-        for (const [index, value] of delta) {
-          ch.data[index] = value;
-        }
-
-        cmap.set(key, ch);
-        dirty.add(key);
+  try{data=JSON.parse(raw)}catch(e){safeCorruptionReset();return false}
+  if(!data||data.v!==2||!data.p||!Array.isArray(data.inv)){safeCorruptionReset();return false}
+  try{
+    player.pos.set(data.p.x,data.p.y,data.p.z);
+    player.yaw=data.p.yaw;player.pitch=data.p.pitch;
+    data.inv.forEach((s,i)=>{if(i<inv.length)inv[i]={id:s.id||0,n:s.n||0}});
+    if(data.chunks){
+      for(const key in data.chunks){
+        const[cx,cz]=key.split('|').map(Number);
+        const ch=genChunk(cx,cz);
+        for(const[index,value]of data.chunks[key])ch.data[index]=value;
+        cmap.set(key,ch);dirty.add(key);
       }
     }
-
-    Bus.emit('inv');
-    return true;
-
-  } catch (e) {
-    safeCorruptionReset();
-    return false;
-  }
+    Bus.emit('inv');return true;
+  }catch(e){safeCorruptionReset();return false}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3️⃣  SAFE FALLBACK ON CORRUPTION
-// ─────────────────────────────────────────────────────────────────────────────
-
-function safeCorruptionReset() {
+function safeCorruptionReset(){
   console.warn('Save corrupted. Resetting...');
   localStorage.removeItem(SAVE_KEY);
   showToast('Save Corrupted — Reset');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4️⃣  DEBOUNCED SAVE TRIGGER (NON-BLOCKING)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function requestSave() {
-  pendingSave = true;
-
-  if (saveTimer) return;
-
-  saveTimer = setTimeout(() => {
-    if (!pendingSave) return;
-
-    try {
-      const payload = serializeWorld();
-
-      // Defer actual storage to idle frame
-      requestIdleCallback(() => {
-        try {
-          localStorage.setItem(SAVE_KEY, payload);
-          showToast('World Saved');
-        } catch (e) {
-          console.warn('Save failed:', e);
-          showToast('Save Failed');
-        }
+function requestSave(){
+  pendingSave=true;
+  if(saveTimer)return;
+  saveTimer=setTimeout(()=>{
+    if(!pendingSave)return;
+    try{
+      const payload=serializeWorld();
+      requestIdleCallback(()=>{
+        try{localStorage.setItem(SAVE_KEY,payload);showToast('World Saved')}
+        catch(e){console.warn('Save failed:',e);showToast('Save Failed')}
       });
-
-    } finally {
-      pendingSave = false;
-      saveTimer = null;
-    }
-  }, 800); // 800ms debounce
+    }finally{pendingSave=false;saveTimer=null}
+  },800);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AUTO TRIGGERS
-// ─────────────────────────────────────────────────────────────────────────────
+function saveWorld(){requestSave()}
 
-// Save when blocks change
-Bus.on('inv', requestSave);
+Bus.on('inv',requestSave);
 
-// Hook into block modification
-const _originalSetBlock = setBlock;
-setBlock = function(wx, wy, wz, id) {
-  _originalSetBlock(wx, wy, wz, id);
+const _originalSetBlock=setBlock;
+setBlock=function(wx,wy,wz,id){
+  _originalSetBlock(wx,wy,wz,id);
   requestSave();
 };
 
-// ─── UI RENDER ───────────────────────────────────────────────────────────────
+// ─── UI REFS ─────────────────────────────────────────────────────────────────
 const debugEl=document.getElementById('debug');
 const blabelEl=document.getElementById('blabel');
 const hotbarEl=document.getElementById('hotbar');
@@ -1245,12 +1131,11 @@ const craftOutEl=document.getElementById('craft-out');
 const craftOutN=document.getElementById('cout-n');
 const invOverlay=document.getElementById('inventory');
 const toastEl=document.getElementById('toast');
-const staminaFillEl = document.getElementById('stamina-fill');
+const staminaFillEl=document.getElementById('stamina-fill');
 const onboarding=document.getElementById('onboarding'),dashboard=document.getElementById('dashboard');
 const loadingEl=document.getElementById('loading'),lfill=document.getElementById('lfill');
 
 let toastT=null;
-
 function showToast(msg){
   toastEl.textContent=msg;toastEl.classList.add('show');
   clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),1900);
@@ -1258,99 +1143,67 @@ function showToast(msg){
 
 const icoCache=new Map();
 function mkIco(id){
-  if(icoCache.has(id)) return icoCache.get(id).cloneNode();
-  const c = BCOLOR[id]; if(!c) return null;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = 28;
-  cv.className = 'bico';
-  const ctx = cv.getContext('2d');
-  const r = (c[0]*255)|0, g = (c[1]*255)|0, b = (c[2]*255)|0;
-
-  // Base color
-  ctx.fillStyle = `rgb(${r},${g},${b})`;
-  ctx.fillRect(0,0,28,28);
-
-    // Highlight (top half)
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
-  ctx.fillRect(0, 0, 28, 14);
-
-  icoCache.set(id, cv);
-  return cv.cloneNode();
+  if(icoCache.has(id))return icoCache.get(id).cloneNode();
+  const c=BCOLOR[id];if(!c)return null;
+  const cv=document.createElement('canvas');
+  cv.width=cv.height=28;cv.className='bico';
+  const ctx=cv.getContext('2d');
+  const r=(c[0]*255)|0,g=(c[1]*255)|0,b=(c[2]*255)|0;
+  ctx.fillStyle=`rgb(${r},${g},${b})`;ctx.fillRect(0,0,28,28);
+  ctx.fillStyle='rgba(255,255,255,0.14)';ctx.fillRect(0,0,28,14);
+  // Water gets a shimmer
+  if(id===WATER){
+    ctx.fillStyle='rgba(255,255,255,0.22)';
+    ctx.fillRect(4,8,20,3);
+    ctx.fillStyle='rgba(255,255,255,0.12)';
+    ctx.fillRect(2,16,14,2);
+  }
+  icoCache.set(id,cv);return cv.cloneNode();
 }
 
-// ─── HOTBAR INITIALIZATION ───────────────────────────────────────────────
-const hotbarDiv = document.getElementById('hotbar');
-const hbSlots = [];
+// ─── HOTBAR ───────────────────────────────────────────────────────────────────
+const hotbarDiv=document.getElementById('hotbar');
+const hbSlots=[];
 
-for (let i = 0; i < HBSIZE; i++) {
-  const slot = document.createElement('div');
-  slot.className = 'hslot';
-  
-  const icon = document.createElement('div'); // or <img> if using textures
-  icon.className = 'bico';
-  icon.style.display = 'none';
-  
-  const num = document.createElement('div');
-  num.className = 'hslot-n';
-  num.textContent = i + 1;
-
-  slot.appendChild(icon);
-  slot.appendChild(num);
-  hotbarDiv.appendChild(slot);
-
-  hbSlots.push({ slot, icon, num });
+for(let i=0;i<HBSIZE;i++){
+  const slot=document.createElement('div');slot.className='hslot';
+  const icon=document.createElement('div');icon.className='bico';icon.style.display='none';
+  const num=document.createElement('div');num.className='hslot-n';num.textContent=i+1;
+  slot.appendChild(icon);slot.appendChild(num);hotbarDiv.appendChild(slot);
+  hbSlots.push({slot,icon,num});
 }
 
-// ─── HOTBAR UPDATE FUNCTION ───────────────────────────────────────────────
-function updateHotbar() {
-  for (let i = 0; i < HBSIZE; i++) {
-    const slotData = inv[i];
-    const { slot, icon, num } = hbSlots[i];
-
-    // Remove old block color classes
-    slot.classList.remove('grass','dirt','wood','stone','planks','leaves');
-
-    // Active slot highlight
-    slot.classList.toggle('sel', i === hbSel);
-
-    // Display icon if block exists
-    if (slotData.id && slotData.id !== AIR) {
-      icon.style.display = 'block';
-      // optional: icon.src = BLOCK_ICONS[slotData.id] if using textures
-    } else {
-      icon.style.display = 'none';
+function updateHotbar(){
+  for(let i=0;i<HBSIZE;i++){
+    const slotData=inv[i];
+    const{slot,icon,num}=hbSlots[i];
+    slot.classList.remove('grass','dirt','wood','stone','planks','leaves','water');
+    slot.classList.toggle('sel',i===hbSel);
+    if(slotData.id&&slotData.id!==AIR)icon.style.display='block';
+    else icon.style.display='none';
+    switch(slotData.id){
+      case GRASS:slot.classList.add('grass');break;
+      case DIRT:slot.classList.add('dirt');break;
+      case WOOD:slot.classList.add('wood');break;
+      case STONE:slot.classList.add('stone');break;
+      case PLANKS:slot.classList.add('planks');break;
+      case LEAVES:slot.classList.add('leaves');break;
+      case WATER:slot.classList.add('water');break;
     }
-
-    // Apply color class based on block type
-    switch(slotData.id) {
-      case GRASS: slot.classList.add('grass'); break;
-      case DIRT: slot.classList.add('dirt'); break;
-      case WOOD: slot.classList.add('wood'); break;
-      case STONE: slot.classList.add('stone'); break;
-      case PLANKS: slot.classList.add('planks'); break;
-      case LEAVES: slot.classList.add('leaves'); break;
-    }
-
-    // Stack count or slot number
-    num.textContent = slotData.n > 1 ? slotData.n : (i + 1);
+    num.textContent=slotData.n>1?slotData.n:(i+1);
   }
 }
 
-// Re-render hotbar whenever inventory or selection changes
-Bus.on('inv', updateHotbar);
-
-// Initial render
+Bus.on('inv',updateHotbar);
 updateHotbar();
 
 // ─── INVENTORY RENDER ────────────────────────────────────────────────────────
-
-
 function renderInvGrid(){
   invGridEl.innerHTML='';
   for(let i=0;i<INV_TOTAL;i++){
     const sl=document.createElement('div');sl.className='islot';
     const s=inv[i];
-    if(s && s.id){
+    if(s&&s.id){
       const ico=mkIco(s.id);if(ico)sl.appendChild(ico);
       if(s.n>1){const lb=document.createElement('span');lb.className='cnt';lb.textContent=s.n;sl.appendChild(lb)}
     }
@@ -1364,7 +1217,7 @@ function renderCraftGrid(){
   craftGridEl.innerHTML='';
   for(let i=0;i<4;i++){
     const sl=document.createElement('div');sl.className='islot';
-    const s = CraftingGrid.slots[i];
+    const s=CraftingGrid.slots[i];
     if(s&&s.id){
       const ico=mkIco(s.id);if(ico)sl.appendChild(ico);
       if(s.n>1){const lb=document.createElement('span');lb.className='cnt';lb.textContent=s.n;sl.appendChild(lb)}
@@ -1372,23 +1225,20 @@ function renderCraftGrid(){
     const ii=i;
     sl.addEventListener('click',()=>{
       const avail=[...new Set(inv.filter(s=>s.id).map(s=>s.id))];
-      const cur = CraftingGrid.slots[ii].id;
+      const cur=CraftingGrid.slots[ii].id;
       const ni=avail.indexOf(cur);
       const next=avail[(ni+1)%Math.max(avail.length,1)]||0;
-      CraftingGrid.slots[ii] = { id: next, n: next ? 1 : 0 };
+      CraftingGrid.slots[ii]={id:next,n:next?1:0};
       evalCraft();
     });
     craftGridEl.appendChild(sl);
   }
-  // result
   while(craftOutEl.firstChild)craftOutEl.removeChild(craftOutEl.firstChild);
   craftOutEl.appendChild(craftOutN);
   if(cresult.id){
     const ico=mkIco(cresult.id);if(ico)craftOutEl.insertBefore(ico,craftOutN);
     craftOutN.textContent=cresult.n>1?cresult.n:'';
-  } else {
-    craftOutN.textContent='';
-  }
+  }else{craftOutN.textContent=''}
   craftOutEl.onclick=takeCraft;
 }
 
@@ -1398,12 +1248,9 @@ function toggleInv(open){
   renderInvGrid();renderCraftGrid();
 }
 
-Bus.on('inv', () => {
-    updateHotbar();             // ← uses your new hotbar updater
-    if (invOpen) {
-        renderInvGrid();
-        renderCraftGrid();
-    }
+Bus.on('inv',()=>{
+  updateHotbar();
+  if(invOpen){renderInvGrid();renderCraftGrid()}
 });
 
 // ─── GAME LOOP ────────────────────────────────────────────────────────────────
@@ -1416,88 +1263,66 @@ function loop(now){
   fa+=dt;fc++;if(fa>=0.5){fps=Math.round(fc/fa);fa=0;fc=0}
 
   if(!invOpen){
-    const fwd=new THREE.Vector3(-Math.sin(player.yaw),0,-Math.cos(player.yaw));
-    const rgt=new THREE.Vector3(Math.cos(player.yaw),0,-Math.sin(player.yaw));
-    const mv=new THREE.Vector3();
-    if(keys['KeyW']||keys['ArrowUp'])mv.addScaledVector(fwd,1);
-    if(keys['KeyS']||keys['ArrowDown'])mv.addScaledVector(fwd,-1);
-    if(keys['KeyA']||keys['ArrowLeft'])mv.addScaledVector(rgt,-1);
-    if(keys['KeyD']||keys['ArrowRight'])mv.addScaledVector(rgt,1);
-    if(mv.lengthSq()>0)mv.normalize();
-
-    if(player.flying){
-      player.vel.x=mv.x*MOVE_SPD*1.8;player.vel.z=mv.z*MOVE_SPD*1.8;
-      if(keys['Space'])player.vel.y=MOVE_SPD;
-      else if(keys['ShiftLeft']||keys['ShiftRight'])player.vel.y=-MOVE_SPD;
-      else player.vel.y=0;
-      player.pos.addScaledVector(player.vel,dt);
-    } else {
-      const speed = player.isSprinting ? MOVE_SPD * 2 : MOVE_SPD;
-      player.vel.x=mv.x*speed;player.vel.z=mv.z*speed;
-      player.vel.y-=GRAVITY*dt;
-      if(keys['Space']&&player.onGround)player.vel.y=JUMP_VEL;
-      resolveAABB(player.pos,player.vel,dt);
-    }
+    applyPlayerPhysics(dt);
+    updateStamina(dt);
   }
 
-  camera.position.set(player.pos.x,player.pos.y+PLAYER_EYE,player.pos.z);
-  camera.rotation.order='YXZ';camera.rotation.y=player.yaw;camera.rotation.x=player.pitch;
-
   updateChunks();
+  updateTimeOfDay(dt);
+  updatePreview();
+  animateWaterMeshes(dt);
 
   const t=rayTarget();
   blabelEl.textContent=t?(BNAME[t.b]||''):'';
 
+  const waterStatus = player.inWater ? ' [Swimming]' : '';
   debugEl.innerHTML=
     `X ${player.pos.x.toFixed(1)}&nbsp; Y ${player.pos.y.toFixed(1)}&nbsp; Z ${player.pos.z.toFixed(1)}<br>`+
-    `FPS ${fps} &nbsp; Chunks ${cmap.size} &nbsp; Meshes ${meshMap.size}<br>`+
-    `[WASD] Move &nbsp; [Space] Jump &nbsp; [F] Fly &nbsp; [Ctrl] Crouch<br>`+
+    `FPS ${fps} &nbsp; Chunks ${cmap.size} &nbsp; Meshes ${meshMap.size}${waterStatus}<br>`+
+    `[WASD] Move &nbsp; [Space] Jump/Swim Up &nbsp; [F] Fly &nbsp; [Ctrl] Crouch/Dive<br>`+
     `[LMB] Break &nbsp; [RMB] Place &nbsp; [1-9] Hotbar<br>`+
     `[E] Inventory &nbsp; [Ctrl+S] Save`;
 
   renderer.render(scene,camera);
 }
 
-// ─── UI STATE ───────────────────────────────────────────────────────────────
-let dashOpen = false;
+// ─── UI STATE ─────────────────────────────────────────────────────────────────
+let dashOpen=false;
 
 function toggleDash(open){
-  dashOpen = gameActive && open;
-  dashboard.classList.toggle('active', dashOpen);
-  if(dashOpen){
-    if(locked)document.exitPointerLock();
-    updateDashStats();
-  } else if(gameActive && !invOpen) {
-    cvs.requestPointerLock();
-  }
+  dashOpen=gameActive&&open;
+  dashboard.classList.toggle('active',dashOpen);
+  if(dashOpen){if(locked)document.exitPointerLock();updateDashStats()}
+  else if(gameActive&&!invOpen)cvs.requestPointerLock();
 }
 
 function updateDashStats(){
-  document.getElementById('ds-seed').textContent = '982134';
-  document.getElementById('ds-pos').textContent = `${Math.floor(player.pos.x)}, ${Math.floor(player.pos.y)}, ${Math.floor(player.pos.z)}`;
-  document.getElementById('ds-chunks').textContent = cmap.size;
-  document.getElementById('ds-blocks').textContent = (cmap.size * CS * CH * CS).toLocaleString();
-  document.getElementById('ds-fps').textContent = fps;
-  document.getElementById('ds-mem').textContent = (window.performance && window.performance.memory) 
-    ? Math.round(window.performance.memory.usedJSHeapSize / 1048576) + 'MB' 
-    : 'N/A';
+  document.getElementById('ds-seed').textContent='982134';
+  document.getElementById('ds-pos').textContent=`${Math.floor(player.pos.x)}, ${Math.floor(player.pos.y)}, ${Math.floor(player.pos.z)}`;
+  document.getElementById('ds-chunks').textContent=cmap.size;
+  document.getElementById('ds-blocks').textContent=(cmap.size*CS*CH*CS).toLocaleString();
+  document.getElementById('ds-fps').textContent=fps;
+  document.getElementById('ds-mem').textContent=(window.performance&&window.performance.memory)
+    ?Math.round(window.performance.memory.usedJSHeapSize/1048576)+'MB':'N/A';
 }
 
 // ─── STARTUP ─────────────────────────────────────────────────────────────────
+initPreview();
+
 function startGame(loaded){
   onboarding.classList.remove('active');
   loadingEl.classList.remove('hide');loadingEl.style.opacity='1';
   lfill.style.width='0%';
-  
+
   if(!loaded){
     invAdd(DIRT,32);invAdd(STONE,32);invAdd(WOOD,16);invAdd(PLANKS,8);
     Bus.emit('inv');
   }
-  
+
   const jobs=[];
   for(let dx=-RDIST;dx<=RDIST;dx++)for(let dz=-RDIST;dz<=RDIST;dz++)jobs.push([dx,dz]);
   let gi=0;
-  
+
   function step(){
     for(let b=0;b<10&&gi<jobs.length;b++,gi++){
       const[dx,dz]=jobs[gi];const ccx=dx,ccz=dz;
@@ -1505,7 +1330,7 @@ function startGame(loaded){
     }
     lfill.style.width=`${Math.round(gi/jobs.length*100)}%`;
     if(gi<jobs.length){requestAnimationFrame(step);return}
-    
+
     if(!loaded)player.pos.set(0,spawnY(0,0),0);
     loadingEl.style.opacity='0';
     setTimeout(()=>loadingEl.classList.add('hide'),400);
@@ -1517,49 +1342,51 @@ function startGame(loaded){
   step();
 }
 
-// ─── MENU HOOKS ──────────────────────────────────────────────────────────────
-document.getElementById('btn-start').onclick = () => {
+// ─── MENU HOOKS ───────────────────────────────────────────────────────────────
+document.getElementById('btn-start').onclick=()=>{
   cmap.clear();
   meshMap.forEach(m=>{scene.remove(m);m.geometry.dispose();m.material.dispose()});
-  meshMap.clear();dirty.clear();
+  meshMap.clear();
+  waterMeshMap.forEach(m=>{scene.remove(m);m.geometry.dispose();m.material.dispose()});
+  waterMeshMap.clear();
+  dirty.clear();
   inv.forEach((_,i)=>inv[i]={id:0,n:0});
-  CraftingGrid.slots.forEach((_, i) => CraftingGrid.slots[i] = { id: 0, n: 0 });
+  CraftingGrid.slots.forEach((_,i)=>CraftingGrid.slots[i]={id:0,n:0});
   cresult={id:0,n:0};
   player.pos.set(0,40,0);player.vel.set(0,0,0);
-  player.yaw=0;player.pitch=0;player.flying=false;
+  player.yaw=0;player.pitch=0;player.flying=false;player.inWater=false;
   startGame(false);
 };
 
-document.getElementById('btn-continue').onclick = () => {
-  const ok = loadWorld();
+document.getElementById('btn-continue').onclick=()=>{
+  const ok=loadWorld();
   if(!ok){showToast('No save found');return}
   startGame(true);
 };
 
-document.getElementById('btn-resume').onclick = () => toggleDash(false);
-document.getElementById('btn-quit').onclick = () => {
-  gameActive = false;
-  toggleDash(false);
+document.getElementById('btn-resume').onclick=()=>toggleDash(false);
+document.getElementById('btn-quit').onclick=()=>{
+  gameActive=false;toggleDash(false);
   onboarding.classList.add('active');
-  if(locked) document.exitPointerLock();
+  if(locked)document.exitPointerLock();
 };
-document.getElementById('btn-save').onclick = () => { saveWorld(); showToast('World Saved'); };
+document.getElementById('btn-save').onclick=()=>{saveWorld();showToast('World Saved')};
 
-const hasSave = localStorage.getItem('minrecraft_save');
-if(hasSave) document.getElementById('btn-continue').style.display = 'block';
+const hasSave=localStorage.getItem('minrecraft_save');
+if(hasSave)document.getElementById('btn-continue').style.display='block';
 
-// Dev toggles
-document.getElementById('tog-wire').onclick = function(){
+document.getElementById('tog-wire').onclick=function(){
   this.classList.toggle('on');
-  scene.traverse(o => { if(o.isMesh && o.material.wireframe !== undefined) o.material.wireframe = this.classList.contains('on'); });
+  scene.traverse(o=>{if(o.isMesh&&o.material.wireframe!==undefined)o.material.wireframe=this.classList.contains('on')});
 };
-document.getElementById('tog-chunk').onclick = function(){
+document.getElementById('tog-chunk').onclick=function(){
   this.classList.toggle('on');
-  showToast(this.classList.contains('on') ? 'Borders: ON (Not Implemented)' : 'Borders: OFF');
+  showToast(this.classList.contains('on')?'Borders: ON (Not Implemented)':'Borders: OFF');
 };
+
+window.addEventListener('DOMContentLoaded',()=>Bus.emit('inv'));
 
 })();
 </script>
 </body>
 </html>// Force GitHub update
-// Force GitHub update// Force GitHub update// Force GitHub update
