@@ -106,6 +106,16 @@
   #loading p{font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:rgba(255,255,255,0.3)}
   #lbar{width:220px;height:2px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:16px;overflow:hidden}
   #lfill{height:100%;background:var(--accent);width:0%;transition:width 0.12s}
+  /* HOTBAR SLOT COLORS BASED ON BLOCK TYPE */
+.hslot.grass { background-color: #5c9e4a; }    /* lime green */
+.hslot.dirt { background-color: #8b5a2b; }     /* brown */
+.hslot.wood { background-color: #c19a6b; }     /* light brown */
+.hslot.stone { background-color: #7f7f7f; }    /* gray */
+.hslot.planks { background-color: #deb887; }   /* plank/light wood */
+.hslot.leaves { background-color: #2e7d32; }   /* darker green */
+
+/* maintain selection highlight */
+.hslot.sel { border-color: rgba(255,255,255,0.5); }
 </style>
 </head>
 <body>
@@ -125,9 +135,17 @@
     <div id="craft-section">
       <h3>Crafting 2×2</h3>
       <div id="craft-row">
-        <div id="craft-grid"></div>
+        <div id="craft-grid">
+  <div class="islot" data-i="0"><img class="bico" /></div>
+  <div class="islot" data-i="1"><img class="bico" /></div>
+  <div class="islot" data-i="2"><img class="bico" /></div>
+  <div class="islot" data-i="3"><img class="bico" /></div>
+</div>
         <div id="craft-arrow">›</div>
-        <div id="craft-out"><span class="cnt" id="cout-n"></span></div>
+        <div id="craft-out">
+  <img class="bico" />
+  <span class="cnt" id="cout-n"></span>
+</div>
       </div>
     </div>
   </div>
@@ -172,14 +190,27 @@ const SEA=18;
 
 const AIR=0,GRASS=1,DIRT=2,STONE=3,WOOD=4,LEAVES=5,SAND=6,COBBLE=7,PLANKS=8,GRAVEL=9;
 
-const BCOLOR={
-  [GRASS]:[0.35,0.55,0.24],[DIRT]:[0.54,0.37,0.22],[STONE]:[0.52,0.52,0.52],
-  [WOOD]:[0.48,0.36,0.22],[LEAVES]:[0.18,0.44,0.16],[SAND]:[0.88,0.82,0.48],
-  [COBBLE]:[0.44,0.44,0.44],[PLANKS]:[0.78,0.62,0.38],[GRAVEL]:[0.50,0.48,0.46]
+const BCOLOR = {
+  [GRASS]: [0.35, 0.55, 0.24],
+  [DIRT]: [0.54, 0.37, 0.22],
+  [STONE]: [0.52, 0.52, 0.52],
+  [WOOD]: [0.48, 0.36, 0.22],
+  [LEAVES]: [0.18, 0.44, 0.16],
+  [SAND]: [0.88, 0.82, 0.48],
+  [COBBLE]: [0.44, 0.44, 0.44],
+  [PLANKS]: [0.78, 0.62, 0.38],
+  [GRAVEL]: [0.50, 0.48, 0.46]
 };
-const BNAME={
-  [GRASS]:'Grass',[DIRT]:'Dirt',[STONE]:'Stone',[WOOD]:'Wood',
-  [LEAVES]:'Leaves',[SAND]:'Sand',[COBBLE]:'Cobble',[PLANKS]:'Planks',[GRAVEL]:'Gravel'
+const BNAME = {
+  [GRASS]: 'Grass',
+  [DIRT]: 'Dirt',
+  [STONE]: 'Stone',
+  [WOOD]: 'Wood',
+  [LEAVES]: 'Leaves',
+  [SAND]: 'Sand',
+  [COBBLE]: 'Cobble',
+  [PLANKS]: 'Planks',
+  [GRAVEL]: 'Gravel'
 };
 const SOLID=new Set([GRASS,DIRT,STONE,WOOD,LEAVES,SAND,COBBLE,PLANKS,GRAVEL]);
 const isSolid=id=>SOLID.has(id);
@@ -772,7 +803,10 @@ function animate(time) {
 }
 
 
-
+// Hook into inventory updates safely
+window.addEventListener('DOMContentLoaded', () => {
+  Bus.emit('inv'); // now all slots exist
+});
 requestAnimationFrame(animate);
 
 function doBreak(){
@@ -794,7 +828,8 @@ function doPlace(){
 // ─── COLLISION ───────────────────────────────────────────────────────────────
 function resolveAABB(pos,vel,dt){
   const HW=PLAYER_HW,HH=PLAYER_HH;
-  let{x,y,z}=pos,{x:vx,y:vy,z:vz}=vel;
+  let { x, y, z } = pos;
+let { x: vx, y: vy, z: vz } = vel;
   function under(nx,ny,nz){
     const x0=Math.floor(nx-HW+0.001),x1=Math.floor(nx+HW-0.001);
     const z0=Math.floor(nz-HW+0.001),z1=Math.floor(nz+HW-0.001);
@@ -1065,96 +1100,71 @@ function mkIco(id){
   return cv.cloneNode();
 }
 
-// ─── HOTBAR RENDER ───────────────────────────────────────────────────────────
-function renderHotbar() {
-  hotbarEl.innerHTML = '';
+// ─── HOTBAR INITIALIZATION ───────────────────────────────────────────────
+const hotbarDiv = document.getElementById('hotbar');
+const hbSlots = [];
+
+for (let i = 0; i < HBSIZE; i++) {
+  const slot = document.createElement('div');
+  slot.className = 'hslot';
+  
+  const icon = document.createElement('div'); // or <img> if using textures
+  icon.className = 'bico';
+  icon.style.display = 'none';
+  
+  const num = document.createElement('div');
+  num.className = 'hslot-n';
+  num.textContent = i + 1;
+
+  slot.appendChild(icon);
+  slot.appendChild(num);
+  hotbarDiv.appendChild(slot);
+
+  hbSlots.push({ slot, icon, num });
+}
+
+// ─── HOTBAR UPDATE FUNCTION ───────────────────────────────────────────────
+function updateHotbar() {
   for (let i = 0; i < HBSIZE; i++) {
-    const slot = document.createElement('div');
-    slot.className = 'hslot' + (i === hbSel ? ' sel' : '');
-    const s = inv[i];
-    if (s && s.id) {
-      const ico = mkIco(s.id);
-      if (ico) slot.appendChild(ico);
-      const n = document.createElement('div');
-      n.className = 'hslot-n';
-      n.textContent = s.n;
-      slot.appendChild(n);
+    const slotData = inv[i];
+    const { slot, icon, num } = hbSlots[i];
+
+    // Remove old block color classes
+    slot.classList.remove('grass','dirt','wood','stone','planks','leaves');
+
+    // Active slot highlight
+    slot.classList.toggle('sel', i === hbSel);
+
+    // Display icon if block exists
+    if (slotData.id && slotData.id !== AIR) {
+      icon.style.display = 'block';
+      // optional: icon.src = BLOCK_ICONS[slotData.id] if using textures
+    } else {
+      icon.style.display = 'none';
     }
-    hotbarEl.appendChild(slot);
+
+    // Apply color class based on block type
+    switch(slotData.id) {
+      case GRASS: slot.classList.add('grass'); break;
+      case DIRT: slot.classList.add('dirt'); break;
+      case WOOD: slot.classList.add('wood'); break;
+      case STONE: slot.classList.add('stone'); break;
+      case PLANKS: slot.classList.add('planks'); break;
+      case LEAVES: slot.classList.add('leaves'); break;
+    }
+
+    // Stack count or slot number
+    num.textContent = slotData.n > 1 ? slotData.n : (i + 1);
   }
 }
+
+// Re-render hotbar whenever inventory or selection changes
+Bus.on('inv', updateHotbar);
+
+// Initial render
+updateHotbar();
 
 // ─── INVENTORY RENDER ────────────────────────────────────────────────────────
-function renderInventory() {
-  invGridEl.innerHTML = '';
-  for (let i = 0; i < INV_TOTAL; i++) {
-    const s = inv[i];
-    const slot = document.createElement('div');
-    slot.className = 'islot';
-    if (s && s.id) {
-      const ico = mkIco(s.id);
-      if (ico) slot.appendChild(ico);
-      const cnt = document.createElement('div');
-      cnt.className = 'cnt';
-      cnt.textContent = s.n;
-      slot.appendChild(cnt);
-    }
-    slot.addEventListener('click', () => {
-      if (i < HBSIZE) setHbSel(i);
-    });
-    invGridEl.appendChild(slot);
-  }
-
-  // Render crafting grid
-  craftGridEl.innerHTML = '';
-  for (let i = 0; i < 4; i++) {
-    const slot = document.createElement('div');
-    slot.className = 'islot';
-    const s = CraftingGrid.slots[i];
-    if (s && s.id) {
-      const ico = mkIco(s.id);
-      if (ico) slot.appendChild(ico);
-      const cnt = document.createElement('div');
-      cnt.className = 'cnt';
-      cnt.textContent = s.n;
-      slot.appendChild(cnt);
-    }
-    slot.addEventListener('click', () => {
-      // Pick block from hotbar
-      const hbBlockId = hbBlock();
-      if (!hbBlockId) return;
-      CraftingGrid.slots[i].id = hbBlockId;
-      CraftingGrid.slots[i].n = 1;
-      evaluateCraftResult();
-    });
-    craftGridEl.appendChild(slot);
-  }
-
-  // Craft output
-  craftOutEl.innerHTML = '';
-  if (cresult.id) {
-    const ico = mkIco(cresult.id);
-    if (ico) craftOutEl.appendChild(ico);
-    craftOutN.textContent = cresult.n;
-  } else {
-    craftOutN.textContent = '';
-  }
-}
-
-Bus.on('inv', () => {
-  renderHotbar();
-  renderInventory();
-});
-
-// ─── INVENTORY TOGGLE ───────────────────────────────────────────────────────
-function toggleInv(open) {
-  if (open) invOverlay.classList.add('open');
-  else invOverlay.classList.remove('open');
-}
-
-// ─── INITIAL RENDER ─────────────────────────────────────────────────────────
-renderHotbar();
-renderInventory();
 
 
 function renderInvGrid(){
@@ -1162,7 +1172,7 @@ function renderInvGrid(){
   for(let i=0;i<INV_TOTAL;i++){
     const sl=document.createElement('div');sl.className='islot';
     const s=inv[i];
-    if(s&&s.id){
+    if(s && s.id){
       const ico=mkIco(s.id);if(ico)sl.appendChild(ico);
       if(s.n>1){const lb=document.createElement('span');lb.className='cnt';lb.textContent=s.n;sl.appendChild(lb)}
     }
@@ -1210,7 +1220,13 @@ function toggleInv(open){
   renderInvGrid();renderCraftGrid();
 }
 
-Bus.on('inv',()=>{renderHotbar();if(invOpen){renderInvGrid();renderCraftGrid()}});
+Bus.on('inv', () => {
+    updateHotbar();             // ← uses your new hotbar updater
+    if (invOpen) {
+        renderInvGrid();
+        renderCraftGrid();
+    }
+});
 
 // ─── GAME LOOP ────────────────────────────────────────────────────────────────
 let lastT=0,fc=0,fa=0,fps=0;
@@ -1289,7 +1305,7 @@ function startGame(loaded){
     loadingEl.style.opacity='0';
     setTimeout(()=>loadingEl.classList.add('hide'),400);
     gameActive=true;lastT=performance.now();
-    renderHotbar();
+    updateHotbar(); // instead of renderHotbar()
     cvs.requestPointerLock();
     requestAnimationFrame(loop);
   }
@@ -1321,3 +1337,4 @@ loadingEl.classList.add('hide');
 </script>
 </body>
 </html>// Force GitHub update
+// Force GitHub update
